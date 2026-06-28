@@ -31,7 +31,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 明确安装所有架构的 QEMU binfmt 注册
       - name: Set up QEMU (all arches)
         run: |
           docker run --privileged --rm tonistiigi/binfmt --install all
@@ -57,10 +56,9 @@ jobs:
         continue-on-error: true
         env:
           TAG: ${{ steps.platform.outputs.tag }}
-          PLATFORM: ${{ matrix.platform }}
         run: |
           docker buildx build \
-            --platform "$PLATFORM" \
+            --platform "${{ matrix.platform }}" \
             --tag ${{ env.REGISTRY_IMAGE }}:$TAG \
             --provenance=false \
             --sbom=false \
@@ -78,8 +76,8 @@ jobs:
           echo "::endgroup::"
           exit 1
 
-  merge:
-    name: Create multi-arch manifest
+  manifest:
+    name: Push multi-arch manifest
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -99,6 +97,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build ALL platforms together in one pass to produce a multi-arch manifest
+      - name: Create multi-arch manifest
+        run: |
+          echo "=== Building multi-arch manifest ==="
+          docker buildx build \
+            --platform linux/amd64,linux/arm64,linux/arm/v7 \
+            --tag ${{ env.REGISTRY_IMAGE }}:latest \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            . 2>&1 | head -50
+
       - name: Log in to Docker Hub (optional)
         id: dockerhub
         uses: docker/login-action@v3
@@ -107,87 +117,13 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Generate metadata (tags)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY_IMAGE }}
-            ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Create multi-arch manifest on GHCR
-        run: |
-          echo "=== Check metadata ==="
-          echo "Tags from metadata:"
-          jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON" || echo "No tags in metadata"
-
-          echo "=== Try imagetools inspect to verify platform images ==="
-          for tag in linux-amd64 linux-arm64 linux-arm-v7; do
-            echo "Checking ${{ env.REGISTRY_IMAGE }}:$tag"
-            docker buildx imagetools inspect "${{ env.REGISTRY_IMAGE }}:$tag" 2>&1 | head -3 || echo "  ❌ Not available"
-          done
-
-          echo "=== Create manifest ==="
-          TAGS=$(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON" 2>/dev/null || echo "")
-          PLATFORM_IMAGES=""
-          for tag in linux-amd64 linux-arm64 linux-arm-v7; do
-            PLATFORM_IMAGES="$PLATFORM_IMAGES ${{ env.REGISTRY_IMAGE }}:$tag"
-          done
-
-          docker buildx imagetools create $PLATFORM_IMAGES && \
-          for tag in $TAGS; do
-            [ -n "$tag" ] && docker buildx imagetools create -t "$tag" $PLATFORM_IMAGES
-          done
-
       - name: Push to Docker Hub (optional)
         if: steps.dockerhub.outcome == 'success'
         run: |
-          cmd="docker buildx imagetools create"
-          while IFS= read -r tag; do
-            [ -n "$tag" ] && cmd="$cmd -t $tag"
-          done <<< "$(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
-          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-amd64"
-          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm64"
-          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm-v7"
-          eval "$cmd"
-
-  export:
-    name: Export image artifact
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    needs:
-      - merge
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and save
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: false
-          load: true
-          tags: ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }}
-
-      - name: Compress
-        run: |
-          docker save ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }} | gzip > /tmp/computer-asset-management-${{ github.ref_name }}.tar.gz
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: computer-asset-management-${{ github.ref_name }}
-          path: /tmp/computer-asset-management-${{ github.ref_name }}.tar.gz
-          retention-days: 7
+          docker buildx build \
+            --platform linux/amd64,linux/arm64,linux/arm/v7 \
+            --tag ${{ env.DOCKER_IMAGE }}:latest \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            . 2>&1 | head -50
