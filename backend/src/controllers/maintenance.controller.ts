@@ -1,6 +1,5 @@
 // 维修管理控制器
 import { Response } from 'express'
-import bcrypt from 'bcryptjs'
 import { AuthRequest } from '../middlewares/auth.middleware'
 import prisma from '../prisma/client'
 
@@ -193,52 +192,48 @@ export async function approveMaintenance(req: AuthRequest, res: Response) {
         data: { status: 'REPAIR' },
       })
 
-      // 3. 处理自由文本的使用人变更
+      // 3. 处理使用人变更（如果提供了当前使用人）
+      // 优先匹配系统用户，未匹配则存为文本
       if (pending.currentUserName) {
-        // 查找或创建用户
-        let targetUser = await tx.user.findFirst({
+        const targetUser = await tx.user.findFirst({
           where: { username: pending.currentUserName },
         })
 
-        if (!targetUser) {
-          targetUser = await tx.user.create({
+        if (targetUser) {
+          // 匹配到系统用户 → 结束旧记录、关联 userId、创建历史
+          const device = await tx.device.findUnique({ where: { id: pending.deviceId } })
+          if (device && device.currentUserId) {
+            await tx.deviceHistoricalUser.updateMany({
+              where: {
+                deviceId: pending.deviceId,
+                userId: device.currentUserId,
+                endDate: null,
+              },
+              data: { endDate: new Date() },
+            })
+          }
+
+          await tx.device.update({
+            where: { id: pending.deviceId },
+            data: { currentUserId: targetUser.id },
+          })
+
+          await tx.deviceHistoricalUser.create({
             data: {
-              username: pending.currentUserName,
-              password: await bcrypt.hash(process.env.DEFAULT_USER_PASSWORD || 'Chang3MePl3ase!', 10), // 无法登录，仅作为占位
-              role: 'STAFF',
-            },
-          })
-        }
-
-        // 结束当前使用人的历史
-        const device = await tx.device.findUnique({ where: { id: pending.deviceId } })
-        if (device && device.currentUserId) {
-          await tx.deviceHistoricalUser.updateMany({
-            where: {
               deviceId: pending.deviceId,
-              userId: device.currentUserId,
-              endDate: null,
+              userId: targetUser.id,
+              changedBy: approverId!,
+              changeReason: '维修分配',
+              startDate: new Date(),
             },
-            data: { endDate: new Date() },
+          })
+        } else {
+          // 未匹配到系统用户 → 存为纯文本
+          await tx.device.update({
+            where: { id: pending.deviceId },
+            data: { currentUserName: pending.currentUserName },
           })
         }
-
-        // 更新设备使用人
-        await tx.device.update({
-          where: { id: pending.deviceId },
-          data: { currentUserId: targetUser.id },
-        })
-
-        // 创建使用人历史
-        await tx.deviceHistoricalUser.create({
-          data: {
-            deviceId: pending.deviceId,
-            userId: targetUser.id,
-            changedBy: approverId!,
-            changeReason: '维修分配',
-            startDate: new Date(),
-          },
-        })
       }
 
       return record

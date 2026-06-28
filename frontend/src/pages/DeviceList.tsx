@@ -24,7 +24,7 @@ import {
   UpOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { deviceApi, userApi, Device } from '../api'
+import { deviceApi, Device } from '../api'
 import { exportToExcel } from '../utils/export'
 import dayjs from 'dayjs'
 
@@ -42,7 +42,6 @@ const DeviceList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>()
   const [orgFilter, setOrgFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
-  const [userFilter, setUserFilter] = useState<string>()
   const [macFilter, setMacFilter] = useState('')
   const [hardwareFilter, setHardwareFilter] = useState('')
   const [approvalDateRange, setApprovalDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null)
@@ -55,25 +54,17 @@ const DeviceList: React.FC = () => {
   const [batchLoading, setBatchLoading] = useState(false)
 
   const { data: devices = [], isLoading } = useQuery({
-    queryKey: ['devices', { status: statusFilter, search, organization: orgFilter, location: locationFilter, currentUserId: userFilter, macAddress: macFilter, hardware: hardwareFilter, fromApprovalDate: approvalDateRange?.[0]?.toISOString(), toApprovalDate: approvalDateRange?.[1]?.toISOString() }],
+    queryKey: ['devices', { status: statusFilter, search, organization: orgFilter, location: locationFilter, macAddress: macFilter, hardware: hardwareFilter, fromApprovalDate: approvalDateRange?.[0]?.toISOString(), toApprovalDate: approvalDateRange?.[1]?.toISOString() }],
     queryFn: () => deviceApi.getList({
       status: statusFilter,
       search,
       organization: orgFilter || undefined,
       location: locationFilter || undefined,
-      currentUserId: userFilter,
       macAddress: macFilter || undefined,
       hardware: hardwareFilter || undefined,
       fromApprovalDate: approvalDateRange?.[0]?.toISOString(),
       toApprovalDate: approvalDateRange?.[1]?.toISOString(),
     }).then((r) => r.data),
-  })
-
-  // 获取用户列表用于使用人筛选
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => userApi.getList().then((r) => r.data),
-    retry: false,
   })
 
   const userRole = localStorage.getItem('userRole')
@@ -284,13 +275,12 @@ const DeviceList: React.FC = () => {
     setStatusFilter(undefined)
     setOrgFilter('')
     setLocationFilter('')
-    setUserFilter(undefined)
     setMacFilter('')
     setHardwareFilter('')
     setApprovalDateRange(null)
   }
 
-  const hasAdvancedFilters = orgFilter || locationFilter || userFilter || macFilter || hardwareFilter || approvalDateRange
+  const hasAdvancedFilters = orgFilter || locationFilter || macFilter || hardwareFilter || approvalDateRange
 
   return (
     <div>
@@ -358,22 +348,6 @@ const DeviceList: React.FC = () => {
             }}
           >
             <Space wrap size="middle">
-              <div>
-                <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>使用人</div>
-                <Select
-                  placeholder="选择使用人"
-                  value={userFilter}
-                  onChange={setUserFilter}
-                  style={{ width: 160 }}
-                  allowClear
-                  showSearch
-                  filterOption={(input, option) =>
-                    (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={users.map((u: any) => ({ label: u.username, value: u.id }))}
-                  notFoundContent="暂无用户"
-                />
-              </div>
               <div>
                 <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>部门</div>
                 <Input

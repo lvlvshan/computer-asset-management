@@ -1,6 +1,5 @@
 // 审批管理控制器
 import { Response } from 'express'
-import bcrypt from 'bcryptjs'
 import { AuthRequest } from '../middlewares/auth.middleware'
 import prisma from '../prisma/client'
 
@@ -133,40 +132,34 @@ export async function approveApproval(req: AuthRequest, res: Response) {
         }
       }
 
-      // 创建/查找使用人（如果提供了 userName）
-      let targetUserId: string | null = null
+      // 设置设备使用人（如果提供了 userName）
+      // 优先匹配系统用户，未匹配则存为文本
       if (hardwareData.userName) {
         const existingUser = await tx.user.findFirst({
           where: { username: hardwareData.userName },
         })
         if (existingUser) {
-          targetUserId = existingUser.id
-        } else {
-          // 创建新用户
-          const newUser = await tx.user.create({
+          // 匹配到系统用户 → 关联 userId 并记录历史
+          await tx.device.update({
+            where: { id: device.id },
+            data: { currentUserId: existingUser.id },
+          })
+          await tx.deviceHistoricalUser.create({
             data: {
-              username: hardwareData.userName,
-              password: await bcrypt.hash(process.env.DEFAULT_USER_PASSWORD || 'Chang3MePl3ase!', 10),
-              role: 'STAFF',
+              deviceId: device.id,
+              userId: existingUser.id,
+              changedBy: userId!,
+              changeReason: '分配',
+              startDate: new Date(),
             },
           })
-          targetUserId = newUser.id
+        } else {
+          // 未匹配到系统用户 → 存为纯文本
+          await tx.device.update({
+            where: { id: device.id },
+            data: { currentUserName: hardwareData.userName },
+          })
         }
-        // 更新设备的使用人
-        await tx.device.update({
-          where: { id: device.id },
-          data: { currentUserId: targetUserId },
-        })
-        // 创建使用人历史记录
-        await tx.deviceHistoricalUser.create({
-          data: {
-            deviceId: device.id,
-            userId: targetUserId,
-            changedBy: userId!, // 审批人 ID
-            changeReason: '分配',
-            startDate: new Date(),
-          },
-        })
       }
 
       // 创建新的硬件信息

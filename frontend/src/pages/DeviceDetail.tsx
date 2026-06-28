@@ -14,18 +14,15 @@ import {
   Alert,
   Modal,
   Input,
-  Select,
   message,
 } from 'antd'
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  UserSwitchOutlined,
-  SwapOutlined,
   RollbackOutlined,
 } from '@ant-design/icons'
-import { deviceApi, approvalApi, userApi } from '../api'
+import { deviceApi, approvalApi } from '../api'
 
 const statusMap: Record<string, { text: string; color: string }> = {
   IN_USE: { text: '使用中', color: 'green' },
@@ -40,9 +37,6 @@ const DeviceDetail: React.FC = () => {
   const queryClient = useQueryClient()
   const [rejectModalVisible, setRejectModalVisible] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-  const [allocateModalVisible, setAllocateModalVisible] = useState(false)
-  const [selectedUserId, setSelectedUserId] = useState<string>()
-  const [allocateReason, setAllocateReason] = useState('')
 
   const { data: device, isLoading } = useQuery({
     queryKey: ['device', id],
@@ -75,29 +69,6 @@ const DeviceDetail: React.FC = () => {
     },
     onError: (err: any) => {
       message.error(err.response?.data?.error || '操作失败')
-    },
-  })
-
-  // 用户列表
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => userApi.getList().then((r) => r.data),
-    retry: false,
-  })
-
-  // 分配使用人
-  const allocateMutation = useMutation({
-    mutationFn: ({ userId, reason }: { userId: string; reason?: string }) =>
-      deviceApi.allocateUser(id!, { userId, reason }),
-    onSuccess: () => {
-      message.success('分配成功')
-      queryClient.invalidateQueries({ queryKey: ['device', id] })
-      setAllocateModalVisible(false)
-      setSelectedUserId(undefined)
-      setAllocateReason('')
-    },
-    onError: (err: any) => {
-      message.error(err.response?.data?.error || '分配失败')
     },
   })
 
@@ -197,18 +168,11 @@ const DeviceDetail: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label="当前使用人">
               {device.currentUserName || device.currentUser?.username || '无'}
-              <span style={{ marginLeft: 12 }}>
-                {device.currentUserName || device.currentUser ? (
-                  <Space size="small">
-                    <Button type="link" size="small" icon={<SwapOutlined />} onClick={() => setAllocateModalVisible(true)}>更换</Button>
-                    <Button type="link" size="small" icon={<RollbackOutlined />} danger onClick={() => {
-                      Modal.confirm({ title: '确认归还', content: `确定将设备从 ${device.currentUserName || device.currentUser?.username} 处归还？`, onOk: () => returnMutation.mutate() })
-                    }}>归还</Button>
-                  </Space>
-                ) : (
-                  <Button type="link" size="small" icon={<UserSwitchOutlined />} onClick={() => setAllocateModalVisible(true)}>分配</Button>
-                )}
-              </span>
+              {device.currentUserName || device.currentUser?.username ? (
+                <Button type="link" size="small" icon={<RollbackOutlined />} danger style={{ marginLeft: 12 }} onClick={() => {
+                  Modal.confirm({ title: '确认归还', content: `确定将设备从 ${device.currentUserName || device.currentUser?.username} 处归还？`, onOk: () => returnMutation.mutate() })
+                }}>归还</Button>
+              ) : null}
             </Descriptions.Item>
             <Descriptions.Item label="所属部门">{device.organization || '-'}</Descriptions.Item>
             <Descriptions.Item label="放置位置">{device.location || '-'}</Descriptions.Item>
@@ -414,43 +378,6 @@ const DeviceDetail: React.FC = () => {
         />
       </Modal>
 
-      {/* 分配使用人 Modal */}
-      <Modal
-        title="分配使用人"
-        open={allocateModalVisible}
-        onOk={() => {
-          if (selectedUserId) allocateMutation.mutate({ userId: selectedUserId, reason: allocateReason || undefined })
-        }}
-        onCancel={() => {
-          setAllocateModalVisible(false)
-          setSelectedUserId(undefined)
-          setAllocateReason('')
-        }}
-        confirmLoading={allocateMutation.isPending}
-        okButtonProps={{ disabled: !selectedUserId }}
-      >
-        <div style={{ marginTop: 16 }}>
-          <p style={{ marginBottom: 8 }}>选择使用人：</p>
-          <Select
-            style={{ width: '100%' }}
-            placeholder="请选择使用人"
-            value={selectedUserId}
-            onChange={setSelectedUserId}
-            showSearch
-            optionFilterProp="children"
-          >
-            {users.map((u: any) => (
-              <Select.Option key={u.id} value={u.id}>{u.username}</Select.Option>
-            ))}
-          </Select>
-          <p style={{ margin: '16px 0 8px' }}>变更原因（可选）：</p>
-          <Input
-            placeholder="例如：新配、调岗等"
-            value={allocateReason}
-            onChange={(e) => setAllocateReason(e.target.value)}
-          />
-        </div>
-      </Modal>
     </div>
   )
 }
