@@ -3,7 +3,7 @@ import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import prisma from '../prisma/client'
-import { JWT_SECRET } from '../middlewares/auth.middleware'
+import { AuthRequest, JWT_SECRET } from '../middlewares/auth.middleware'
 
 // 用户登录
 export async function login(req: Request, res: Response) {

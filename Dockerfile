@@ -1,7 +1,7 @@
 # ============================================================
 # Stage 1: Build frontend (React SPA)
 # ============================================================
-FROM --platform=linux/amd64 node:20-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 COPY frontend/package*.json ./
@@ -12,7 +12,7 @@ RUN npm run build
 # ============================================================
 # Stage 2: Build backend (Express API)
 # ============================================================
-FROM --platform=linux/amd64 node:20-alpine AS backend-builder
+FROM node:20-alpine AS backend-builder
 
 RUN apk add --no-cache openssl
 
@@ -26,7 +26,7 @@ RUN npm run build
 # ============================================================
 # Stage 3: Production runtime image
 # ============================================================
-FROM --platform=linux/amd64 node:20-alpine
+FROM node:20-alpine
 
 RUN apk add --no-cache openssl tini
 
@@ -36,7 +36,6 @@ WORKDIR /app
 COPY --from=backend-builder /app/dist ./dist
 COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/prisma ./prisma
-COPY --from=backend-builder /app/package.json ./
 
 # Copy built frontend → served as static files by backend
 COPY --from=frontend-builder /app/dist ./public

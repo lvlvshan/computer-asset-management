@@ -313,7 +313,7 @@ export async function allocateUser(req: AuthRequest, res: Response) {
       data: {
         deviceId: id,
         userId,
-        changedBy: operatorId,
+        changedBy: operatorId!,
         changeReason: reason || '分配',
         startDate: new Date(),
       },
@@ -408,7 +408,7 @@ export async function addMaintenanceRecord(req: AuthRequest, res: Response) {
         cost: cost ? parseFloat(cost) : null,
         vendor,
         startDate: new Date(startDate),
-        operator: operatorId,
+        operator: operatorId!,
       },
       include: {
         user: {

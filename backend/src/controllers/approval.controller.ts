@@ -162,7 +162,7 @@ export async function approveApproval(req: AuthRequest, res: Response) {
           data: {
             deviceId: device.id,
             userId: targetUserId,
-            changedBy: userId, // 审批人 ID
+            changedBy: userId!, // 审批人 ID
             changeReason: '分配',
             startDate: new Date(),
           },

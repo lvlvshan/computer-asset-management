@@ -5,7 +5,23 @@ import path from 'path'
 import fs from 'fs'
 import multer from 'multer'
 
-const DB_PATH = path.resolve(__dirname, '../../prisma/dev.db')
+// 从 DATABASE_URL 中提取数据库文件路径
+// SQLite URL 格式: file:/path/to/dev.db
+function getDbPath(): string {
+  const dbUrl = process.env.DATABASE_URL || 'file:./dev.db'
+  const match = dbUrl.match(/^file:(.+)$/)
+  if (match) {
+    const p = match[1]
+    // 如果是相对路径，基于项目根目录解析
+    if (!path.isAbsolute(p)) {
+      return path.resolve(__dirname, '../../', p)
+    }
+    return p
+  }
+  return path.resolve(__dirname, '../../prisma/dev.db')
+}
+
+const DB_PATH = getDbPath()
 
 // Multer 配置
 const upload = multer({ storage: multer.memoryStorage() })
@@ -42,10 +58,11 @@ export async function importDatabase(req: AuthRequest, res: Response) {
     }
 
     // 恢复前自动备份当前数据库
-    const preRestoreBackup = path.resolve(
-      __dirname,
-      `../../prisma/dev-pre-${Date.now()}.db`
-    )
+    const backupDir = path.dirname(DB_PATH)
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true })
+    }
+    const preRestoreBackup = path.join(backupDir, `dev-pre-${Date.now()}.db`)
     if (fs.existsSync(DB_PATH)) {
       fs.copyFileSync(DB_PATH, preRestoreBackup)
     }
