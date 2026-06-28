@@ -13,7 +13,7 @@ env:
 
 jobs:
   build:
-    name: Build and push Docker image
+    name: Build for ${{ matrix.platform }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,7 +37,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # GHCR login — always succeeds via GITHUB_TOKEN
+      - name: Set platform tag
+        id: platform
+        run: |
+          # Docker tag 不能包含 '/'，用 '-' 替换
+          tag="${{ matrix.platform }}"
+          echo "tag=${tag//\//-}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -45,7 +51,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Docker Hub login — optional, continues if secrets not set
+      - name: Build and push (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ env.REGISTRY_IMAGE }}:${{ steps.platform.outputs.tag }}
+
+  merge:
+    name: Create multi-arch manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - build
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker Hub login (optional)
       - name: Log in to Docker Hub
         id: dockerhub
         uses: docker/login-action@v3
@@ -66,95 +100,34 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Push to GHCR always. Docker Hub push happens only if logged in.
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
+      - name: Create and push multi-arch manifest to GHCR
         run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          # Build the imagetools create command
+          cmd="docker buildx imagetools create"
+          # Add tags from metadata
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && cmd="$cmd -t $tag"
+          done <<< "$(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          # Add platform images — each was pushed as $REGISTRY_IMAGE:$platform
+          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-amd64"
+          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm64"
+          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm-v7"
+          echo "Running: $cmd"
+          eval "$cmd"
 
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ matrix.platform }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    name: Create multi-arch manifest
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          pattern: digests-*
-          merge-multiple: true
-          path: /tmp/digests
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # GHCR login
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Docker Hub login (optional)
-      - name: Log in to Docker Hub
-        id: dockerhub
-        uses: docker/login-action@v3
-        continue-on-error: true
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Generate metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY_IMAGE }}
-            ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      # Create multi-arch manifest and push to GHCR
-      - name: Push manifest to GHCR
-        run: |
-          cd /tmp/digests
-          images=$(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
-          docker buildx imagetools create $(jq -r '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") $images
-
-      # If Docker Hub login succeeded, also push manifest there
-      - name: Push manifest to Docker Hub
+      - name: Push multi-arch manifest to Docker Hub (optional)
         if: steps.dockerhub.outcome == 'success'
         run: |
-          cd /tmp/digests
-          images=$(printf '${{ env.DOCKER_IMAGE }}@sha256:%s ' *)
-          docker buildx imagetools create $(jq -r '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") $images
+          cmd="docker buildx imagetools create"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && cmd="$cmd -t $tag"
+          done <<< "$(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-amd64"
+          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm64"
+          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm-v7"
+          eval "$cmd"
 
-  # 仅 tag 推送时导出 tar 包作为 artifact
+  # 仅 tag 推送时导出 tar 包
   export:
     name: Export image artifact
     runs-on: ubuntu-latest
@@ -172,7 +145,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and export to tar
+      - name: Build and save as tar
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -181,7 +154,7 @@ jobs:
           load: true
           tags: ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }}
 
-      - name: Compress image
+      - name: Compress
         run: |
           docker save ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }} | gzip > /tmp/computer-asset-management-${{ github.ref_name }}.tar.gz
 
