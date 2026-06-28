@@ -1,7 +1,7 @@
 # ============================================================
 # Stage 1: Build frontend (React SPA)
 # ============================================================
-FROM node:20-alpine AS frontend-builder
+FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app
 COPY frontend/package*.json ./
@@ -12,9 +12,9 @@ RUN npm run build
 # ============================================================
 # Stage 2: Build backend (Express API)
 # ============================================================
-FROM node:20-alpine AS backend-builder
+FROM node:20-bookworm-slim AS backend-builder
 
-RUN apk add --no-cache openssl
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY backend/package*.json ./
@@ -26,9 +26,9 @@ RUN npm run build
 # ============================================================
 # Stage 3: Production runtime image
 # ============================================================
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
-RUN apk add --no-cache openssl tini
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -52,7 +52,7 @@ ENV DATABASE_URL="file:/data/dev.db"
 EXPOSE 3000
 
 # Use tini as init for proper signal handling
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Generate Prisma client (for target arch) and start server
 CMD npx prisma generate --schema=./prisma/schema.prisma && \
