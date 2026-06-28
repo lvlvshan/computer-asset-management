@@ -86,6 +86,7 @@ jobs:
       packages: write
     needs:
       - build
+    if: always()
 
     steps:
       - name: Set up Docker Buildx
@@ -120,15 +121,30 @@ jobs:
 
       - name: Create multi-arch manifest on GHCR
         run: |
-          cmd="docker buildx imagetools create"
-          while IFS= read -r tag; do
-            [ -n "$tag" ] && cmd="$cmd -t $tag"
-          done <<< "$(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
-          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-amd64"
-          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm64"
-          cmd="$cmd ${{ env.REGISTRY_IMAGE }}:linux-arm-v7"
-          echo "Running: $cmd"
-          eval "$cmd"
+          set -e
+          echo "=== Check metadata ==="
+          echo "Tags from metadata:"
+          jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"
+
+          echo "=== Try imagetools inspect to verify platform images ==="
+          for tag in linux-amd64 linux-arm64 linux-arm-v7; do
+            echo "Checking ${{ env.REGISTRY_IMAGE }}:$tag"
+            docker buildx imagetools inspect "${{ env.REGISTRY_IMAGE }}:$tag" 2>&1 | head -3 || echo "  ❌ Not available"
+          done
+
+          echo "=== Create manifest ==="
+          TAGS=$(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          PLATFORM_IMAGES=""
+          for tag in linux-amd64 linux-arm64 linux-arm-v7; do
+            PLATFORM_IMAGES="$PLATFORM_IMAGES ${{ env.REGISTRY_IMAGE }}:$tag"
+          done
+
+          # Create manifest: first create with all platforms, then add tags
+          docker buildx imagetools create $PLATFORM_IMAGES
+          # Now add the metadata tags (latest, v1.0.0, etc.)
+          for tag in $TAGS; do
+            [ -n "$tag" ] && docker buildx imagetools create -t "$tag" $PLATFORM_IMAGES
+          done
 
       - name: Push to Docker Hub (optional)
         if: steps.dockerhub.outcome == 'success'
