@@ -1,0 +1,60 @@
+# ============================================================
+# Stage 1: Build frontend (React SPA)
+# ============================================================
+FROM --platform=linux/amd64 node:20-alpine AS frontend-builder
+
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci --ignore-scripts && npm cache clean --force
+COPY frontend/ ./
+RUN npm run build
+
+# ============================================================
+# Stage 2: Build backend (Express API)
+# ============================================================
+FROM --platform=linux/amd64 node:20-alpine AS backend-builder
+
+RUN apk add --no-cache openssl
+
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm ci --ignore-scripts && npm cache clean --force
+COPY backend/ ./
+RUN npx prisma generate
+RUN npm run build
+
+# ============================================================
+# Stage 3: Production runtime image
+# ============================================================
+FROM --platform=linux/amd64 node:20-alpine
+
+RUN apk add --no-cache openssl tini
+
+WORKDIR /app
+
+# Copy compiled backend
+COPY --from=backend-builder /app/dist ./dist
+COPY --from=backend-builder /app/node_modules ./node_modules
+COPY --from=backend-builder /app/prisma ./prisma
+COPY --from=backend-builder /app/package.json ./
+
+# Copy built frontend → served as static files by backend
+COPY --from=frontend-builder /app/dist ./public
+
+# Create data directory for SQLite persistence
+RUN mkdir -p /data
+
+# Environment defaults (override at runtime)
+ENV PORT=3000
+ENV NODE_ENV=production
+ENV DATABASE_URL="file:/data/dev.db"
+
+# Expose application port
+EXPOSE 3000
+
+# Use tini as init for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Generate Prisma client (for target arch) and start server
+CMD npx prisma generate --schema=./prisma/schema.prisma && \
+    node dist/index.js
