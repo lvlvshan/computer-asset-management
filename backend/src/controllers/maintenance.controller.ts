@@ -1,0 +1,295 @@
+// 维修管理控制器
+import { Response } from 'express'
+import bcrypt from 'bcryptjs'
+import { AuthRequest } from '../middlewares/auth.middleware'
+import prisma from '../prisma/client'
+
+// 维修人员：获取设备列表
+export async function getDevicesForMaintenance(req: AuthRequest, res: Response) {
+  try {
+    const { status, search } = req.query
+    const where: any = {}
+    if (status) where.status = status
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string } },
+        { deviceCode: { contains: search as string } },
+      ]
+    }
+
+    const devices = await prisma.device.findMany({
+      where,
+      select: {
+        id: true,
+        deviceCode: true,
+        name: true,
+        status: true,
+        organization: true,
+        location: true,
+        currentUser: { select: { id: true, username: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(devices)
+  } catch (error) {
+    console.error('获取维修设备列表错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}
+
+// 维修人员：提交维修记录（需审批）
+export async function submitMaintenance(req: AuthRequest, res: Response) {
+  try {
+    const { userId: submitterId } = req
+    const {
+      deviceId, maintenanceType, description, solution,
+      cost, vendor, startDate, endDate, currentUserName,
+    } = req.body
+
+    if (!deviceId || !maintenanceType || !description || !startDate) {
+      res.status(400).json({ error: '设备、维修类型、故障描述和送修日期为必填项' })
+      return
+    }
+
+    const pending = await prisma.pendingMaintenance.create({
+      data: {
+        deviceId,
+        maintenanceType,
+        description,
+        solution: solution || null,
+        cost: cost ? parseFloat(cost) : null,
+        vendor: vendor || null,
+        startDate: new Date(startDate),
+        endDate: endDate ? new Date(endDate) : null,
+        currentUserName: currentUserName || null,
+        status: 'PENDING',
+        submitterId: submitterId!,
+      },
+      include: {
+        device: { select: { id: true, deviceCode: true, name: true } },
+        submitter: { select: { id: true, username: true } },
+      },
+    })
+
+    res.status(201).json(pending)
+  } catch (error) {
+    console.error('提交维修记录错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}
+
+// 维修人员：查看自己提交的记录
+export async function getMySubmissions(req: AuthRequest, res: Response) {
+  try {
+    const { userId } = req
+
+    const records = await prisma.pendingMaintenance.findMany({
+      where: { submitterId: userId },
+      include: {
+        device: { select: { id: true, deviceCode: true, name: true } },
+        approver: { select: { id: true, username: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(records)
+  } catch (error) {
+    console.error('获取提交记录错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}
+
+// 管理员：获取待审批维修列表
+export async function getPendingMaintenanceApprovals(req: AuthRequest, res: Response) {
+  try {
+    const { status } = req.query
+    const where: any = {}
+    if (status) where.status = status
+
+    const approvals = await prisma.pendingMaintenance.findMany({
+      where,
+      include: {
+        device: { select: { id: true, deviceCode: true, name: true } },
+        submitter: { select: { id: true, username: true } },
+        approver: { select: { id: true, username: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    res.json(approvals)
+  } catch (error) {
+    console.error('获取维修审批列表错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}
+
+// 管理员：获取维修审批详情
+export async function getMaintenanceApprovalDetail(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params
+
+    const approval = await prisma.pendingMaintenance.findUnique({
+      where: { id },
+      include: {
+        device: { select: { id: true, deviceCode: true, name: true } },
+        submitter: { select: { id: true, username: true } },
+        approver: { select: { id: true, username: true } },
+      },
+    })
+
+    if (!approval) {
+      res.status(404).json({ error: '记录不存在' })
+      return
+    }
+
+    res.json(approval)
+  } catch (error) {
+    console.error('获取维修审批详情错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}
+
+// 管理员：审批通过
+export async function approveMaintenance(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params
+    const { userId: approverId } = req
+
+    const pending = await prisma.pendingMaintenance.findUnique({
+      where: { id },
+    })
+
+    if (!pending) {
+      res.status(404).json({ error: '记录不存在' })
+      return
+    }
+
+    if (pending.status !== 'PENDING') {
+      res.status(400).json({ error: '该记录已处理' })
+      return
+    }
+
+    // 事务处理：创建维修记录 + 更新设备
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. 创建实际的维修记录
+      const record = await tx.deviceMaintenance.create({
+        data: {
+          deviceId: pending.deviceId,
+          maintenanceType: pending.maintenanceType,
+          description: pending.description,
+          solution: pending.solution,
+          cost: pending.cost,
+          vendor: pending.vendor,
+          startDate: pending.startDate,
+          endDate: pending.endDate,
+          operator: pending.submitterId, // 保留提交人作为操作人
+        },
+      })
+
+      // 2. 更新设备状态为维修中
+      await tx.device.update({
+        where: { id: pending.deviceId },
+        data: { status: 'REPAIR' },
+      })
+
+      // 3. 处理自由文本的使用人变更
+      if (pending.currentUserName) {
+        // 查找或创建用户
+        let targetUser = await tx.user.findFirst({
+          where: { username: pending.currentUserName },
+        })
+
+        if (!targetUser) {
+          targetUser = await tx.user.create({
+            data: {
+              username: pending.currentUserName,
+              password: await bcrypt.hash(process.env.DEFAULT_USER_PASSWORD || 'Chang3MePl3ase!', 10), // 无法登录，仅作为占位
+              role: 'STAFF',
+            },
+          })
+        }
+
+        // 结束当前使用人的历史
+        const device = await tx.device.findUnique({ where: { id: pending.deviceId } })
+        if (device && device.currentUserId) {
+          await tx.deviceHistoricalUser.updateMany({
+            where: {
+              deviceId: pending.deviceId,
+              userId: device.currentUserId,
+              endDate: null,
+            },
+            data: { endDate: new Date() },
+          })
+        }
+
+        // 更新设备使用人
+        await tx.device.update({
+          where: { id: pending.deviceId },
+          data: { currentUserId: targetUser.id },
+        })
+
+        // 创建使用人历史
+        await tx.deviceHistoricalUser.create({
+          data: {
+            deviceId: pending.deviceId,
+            userId: targetUser.id,
+            changedBy: approverId!,
+            changeReason: '维修分配',
+            startDate: new Date(),
+          },
+        })
+      }
+
+      return record
+    })
+
+    // 更新审批状态
+    await prisma.pendingMaintenance.update({
+      where: { id },
+      data: { status: 'APPROVED', approverId },
+    })
+
+    res.json({ message: '维修记录审批通过' })
+  } catch (error) {
+    console.error('维修审批通过错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}
+
+// 管理员：审批拒绝
+export async function rejectMaintenance(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params
+    const { userId: approverId } = req
+    const { reason } = req.body
+
+    const pending = await prisma.pendingMaintenance.findUnique({
+      where: { id },
+    })
+
+    if (!pending) {
+      res.status(404).json({ error: '记录不存在' })
+      return
+    }
+
+    if (pending.status !== 'PENDING') {
+      res.status(400).json({ error: '该记录已处理' })
+      return
+    }
+
+    await prisma.pendingMaintenance.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        rejectedReason: reason || '',
+        approverId,
+      },
+    })
+
+    res.json({ message: '维修记录已拒绝' })
+  } catch (error) {
+    console.error('维修审批拒绝错误:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+}

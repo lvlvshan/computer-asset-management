@@ -1,0 +1,159 @@
+// 电脑资产管理系统数据库 Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// 用户表
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  role      String   @default("STAFF")  // ADMIN, STAFF, 或 MAINTENANCE
+  createdAt DateTime @default(now())
+
+  // 关联
+  usedDevices           Device[]              @relation("CurrentDeviceUser")
+  historicalRecords     DeviceHistoricalUser[]
+  maintainedDevices     DeviceMaintenance[]
+  approvals             PendingApproval[]     @relation("Approver")
+  submittedMaintenances PendingMaintenance[]  @relation("MaintenanceSubmitter")
+  approvedMaintenances  PendingMaintenance[]  @relation("MaintenanceApprover")
+
+  @@map("users")
+}
+
+// 设备主表
+model Device {
+  id            String       @id @default(uuid())
+  deviceCode    String                   // 资产编号（非唯一，同设备多版本可共用）
+  name          String                      // 设备名称
+  status        String       @default("IDLE")  // IN_USE, IDLE, REPAIR, SCRAPPED
+  currentUserId String?                     // 当前使用人（关联用户 ID）
+  currentUserName String?                   // 当前使用人（自由文本）
+  organization  String?                     // 所属部门
+  location      String?                     // 放置位置
+  purchaseDate  DateTime?                   // 采购日期
+  warrantyEnd   DateTime?                   // 保修截止
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // 关联
+  currentUser       User?              @relation("CurrentDeviceUser", fields: [currentUserId], references: [id])
+  hardware          DeviceHardware?
+  historicalUsers   DeviceHistoricalUser[]
+  maintenanceRecords DeviceMaintenance[]
+  pendingApprovals     PendingApproval[]
+  pendingMaintenances  PendingMaintenance[]
+
+  @@map("devices")
+}
+
+// 设备硬件配置表
+model DeviceHardware {
+  id           String   @id @default(uuid())
+  deviceId     String   @unique
+  cpu          String?
+  memory       String?
+  disk         String?
+  gpu          String?
+  networkCards String?  // JSON 数组
+  motherboard  String?
+  os           String?
+  macAddress   String?  // MAC 地址
+  submitterIp  String?  // 采集 IP
+  collectedAt  DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@map("device_hardware")
+}
+
+// 待审批采集数据表
+model PendingApproval {
+  id            String          @id @default(uuid())
+  deviceId      String?         // 关联现有设备（新设备则为 null）
+  deviceName    String?         // 新设备名称（新设备时填写）
+  hardwareData  String          // JSON 格式的硬件信息
+  submitterIp   String?
+  assetCode     String?         // 资产编号（脚本采集时提供）
+  userName      String?         // 使用人姓名
+  location      String?         // 设备所在地
+  status        String          @default("PENDING")  // PENDING, APPROVED, REJECTED
+  rejectedReason String?
+  approverId    String?         // 审批人
+  createdAt     DateTime        @default(now())
+
+  device     Device? @relation(fields: [deviceId], references: [id])
+  approver User?   @relation("Approver", fields: [approverId], references: [id])
+
+  @@map("pending_approvals")
+}
+
+// 待审批维修记录表
+model PendingMaintenance {
+  id              String    @id @default(uuid())
+  deviceId        String
+  maintenanceType String                         // HARDWARE, SOFTWARE, OTHER
+  description     String                         // 故障描述
+  solution        String?                        // 处理方案
+  cost            Float?                         // 维修费用
+  vendor          String?                        // 维修商
+  startDate       DateTime                       // 送修日期
+  endDate         DateTime?                      // 修复日期
+  currentUserName String?                        // 当前使用人（自由文本）
+  status          String    @default("PENDING")  // PENDING, APPROVED, REJECTED
+  rejectedReason  String?
+  submitterId     String                         // 提交人（MAINTENANCE 用户）
+  approverId      String?                        // 审批人（ADMIN）
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  device    Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  submitter User   @relation("MaintenanceSubmitter", fields: [submitterId], references: [id])
+  approver  User?  @relation("MaintenanceApprover", fields: [approverId], references: [id])
+
+  @@map("pending_maintenance")
+}
+
+// 设备使用人历史表
+model DeviceHistoricalUser {
+  id          String   @id @default(uuid())
+  deviceId    String
+  userId      String
+  changedBy   String   // 操作人 ID
+  changeReason String  // 变更原因：分配/调岗/归还/其他
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("device_historical_users")
+}
+
+// 设备维修记录表
+model DeviceMaintenance {
+  id              String   @id @default(uuid())
+  deviceId        String
+  maintenanceType String   // HARDWARE, SOFTWARE, OTHER
+  description     String    // 故障描述
+  solution        String?   // 处理方案
+  cost            Float?    // 维修费用
+  vendor          String?   // 维修商
+  startDate       DateTime  // 送修日期
+  endDate         DateTime? // 修复日期
+  operator        String    // 操作人 ID
+  createdAt       DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [operator], references: [id])
+
+  @@map("device_maintenance")
+}

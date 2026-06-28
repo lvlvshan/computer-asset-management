@@ -1,0 +1,101 @@
+<!-- 电脑资产信息采集工具 - HTA 版本 -->
+<!-- 双击运行，无需权限设置 -->
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>电脑资产信息采集工具</title>
+<HTA:APPLICATION
+    ID="HardwareCollector"
+    APPLICATIONNAME="HardwareCollector"
+    BORDER="thick"
+    BORDERSTYLE="normal"
+    CAPTION="yes"
+    ICON="#"
+    MAXIMIZEBUTTON="no"
+    MINIMIZEBUTTON="no"
+    SHOWINTASKBAR="yes"
+    SINGLEINSTANCE="yes"
+    SYSMENU="yes"
+    SCROLL="no"
+    VERSION="1.0"
+/>
+<style>
+    body { font-family: 'Microsoft YaHei', Arial, sans-serif; padding: 20px; background: #f0f2f5; }
+    .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h1 { color: #1890ff; text-align: center; margin-bottom: 10px; }
+    .desc { color: #666; text-align: center; margin-bottom: 30px; }
+    input[type="text"] { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box; }
+    button { width: 100%; padding: 14px; font-size: 16px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; }
+    button:hover { background: #40a9ff; }
+    button:disabled { background: #d9d9d9; cursor: not-allowed; }
+    .result { margin-top: 20px; padding: 15px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; display: none; }
+    .error { background: #fff2f0; border-color: #ffccc7; }
+    .info { margin: 5px 0; font-size: 14px; }
+    .label { color: #666; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>💻 电脑资产信息采集工具</h1>
+    <p class="desc">自动采集 CPU、内存、硬盘、显卡等硬件信息</p>
+
+    <label class="label">采集 Token：</label>
+    <input type="text" id="tokenInput" placeholder="从资产管理系统复制 Token" />
+
+    <button id="collectBtn" onclick="collectAndUpload()">开始采集并上传</button>
+
+    <div id="result" class="result"></div>
+</div>
+
+<script language="VBScript">
+Option Explicit
+
+Sub collectAndUpload()
+    Dim token, shell, output
+    token = Document.getElementById("tokenInput").value
+
+    If Trim(token) = "" Then
+        ShowResult "请先输入 Token", True
+        Exit Sub
+    End If
+
+    ' 禁用按钮
+    Document.getElementById("collectBtn").disabled = True
+    Document.getElementById("collectBtn").innerText = "采集中..."
+
+    ' 调用 PowerShell 脚本采集
+    Set shell = CreateObject("WScript.Shell")
+
+    ' 构建 PowerShell 命令
+    Dim psCommand
+    psCommand = "powershell -ExecutionPolicy Bypass -Command ""& { & '" & Replace(window.location.pathname, "/", "\") & "\..\HardwareCollector_collector.ps1' -Token '" & token & "' }"""
+
+    ' 运行并获取输出
+    Dim exec
+    Set exec = shell.Exec(psCommand)
+
+    ' 等待执行完成
+    Do While exec.Status = 0
+        WScript.Sleep 100
+    Loop
+
+    ShowResult "采集完成，请查看 PowerShell 窗口输出", False
+    Document.getElementById("collectBtn").disabled = False
+    Document.getElementById("collectBtn").innerText = "开始采集并上传"
+End Sub
+
+Sub ShowResult(msg, isError)
+    Dim resultDiv
+    Set resultDiv = Document.getElementById("result")
+    resultDiv.style.display = "block"
+    resultDiv.innerText = msg
+    If isError Then
+        resultDiv.className = "result error"
+    Else
+        resultDiv.className = "result"
+    End If
+End Sub
+</script>
+</body>
+</html>
