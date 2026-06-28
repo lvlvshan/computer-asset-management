@@ -5,7 +5,7 @@ FROM --platform=linux/amd64 node:20-alpine AS frontend-builder
 
 WORKDIR /app
 COPY frontend/package*.json ./
-RUN npm ci --ignore-scripts && npm cache clean --force
+RUN npm install --ignore-scripts && npm cache clean --force
 COPY frontend/ ./
 RUN npm run build
 
@@ -18,7 +18,7 @@ RUN apk add --no-cache openssl
 
 WORKDIR /app
 COPY backend/package*.json ./
-RUN npm ci --ignore-scripts && npm cache clean --force
+RUN npm install --ignore-scripts && npm cache clean --force
 COPY backend/ ./
 RUN npx prisma generate
 RUN npm run build
