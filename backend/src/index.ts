@@ -3,6 +3,8 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import fs from 'fs'
+import bcrypt from 'bcryptjs'
+import prisma from './prisma/client'
 import routes from './routes'
 
 const app = express()
@@ -31,9 +33,47 @@ if (fs.existsSync(publicPath)) {
   })
 }
 
-// 启动服务器
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`服务器运行在 http://0.0.0.0:${PORT}`)
-})
+// 启动服务器 — 先初始化数据库默认数据，再监听端口
+async function start() {
+  try {
+    // 创建默认管理员账户（如果没有）
+    const existingAdmin = await prisma.user.findFirst({ where: { role: 'ADMIN' } })
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash('admin123', 10)
+      await prisma.user.create({
+        data: { username: 'admin', password: hashedPassword, role: 'ADMIN' },
+      })
+      console.log('  - 管理员：admin / admin123')
+    }
 
+    // 创建测试普通用户（如果没有）
+    const existingStaff = await prisma.user.findUnique({ where: { username: 'staff' } })
+    if (!existingStaff) {
+      const hashedStaffPassword = await bcrypt.hash('staff123', 10)
+      await prisma.user.create({
+        data: { username: 'staff', password: hashedStaffPassword, role: 'STAFF' },
+      })
+      console.log('  - 普通用户：staff / staff123')
+    }
+
+    // 创建测试维修人员（如果没有）
+    const existingMaint = await prisma.user.findUnique({ where: { username: 'maintenance' } })
+    if (!existingMaint) {
+      const hashedMaintPassword = await bcrypt.hash('maint123', 10)
+      await prisma.user.create({
+        data: { username: 'maintenance', password: hashedMaintPassword, role: 'MAINTENANCE' },
+      })
+      console.log('  - 维修人员：maintenance / maint123')
+    }
+  } catch (e) {
+    console.log('数据库初始化（默认用户已存在可忽略）:', (e as Error).message)
+  }
+
+  // 启动服务器
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`服务器运行在 http://0.0.0.0:${PORT}`)
+  })
+}
+
+start()
 export default app

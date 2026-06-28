@@ -36,6 +36,7 @@ WORKDIR /app
 COPY --from=backend-builder /app/dist ./dist
 COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/prisma ./prisma
+COPY --from=backend-builder /app/package.json ./
 
 # Copy built frontend → served as static files by backend
 COPY --from=frontend-builder /app/dist ./public
@@ -55,5 +56,6 @@ EXPOSE 3000
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Generate Prisma client (for target arch) and start server
-CMD npx prisma generate --schema=./prisma/schema.prisma && \
+CMD /app/node_modules/.bin/prisma generate --schema=./prisma/schema.prisma && \
+    /app/node_modules/.bin/prisma db push --skip-generate --schema=./prisma/schema.prisma && \
     node dist/index.js
