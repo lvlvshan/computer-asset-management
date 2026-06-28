@@ -8,8 +8,8 @@ on:
       - 'v*'
 
 env:
-  REGISTRY_IMAGE: lvlvshan/computer-asset-management
-  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
+  DOCKER_IMAGE: lvlvshan/computer-asset-management
 
 jobs:
   build:
@@ -37,12 +37,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
+      # GHCR login — always succeeds via GITHUB_TOKEN
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -50,18 +45,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker Hub login — optional, continues if secrets not set
+      - name: Log in to Docker Hub
+        id: dockerhub
+        uses: docker/login-action@v3
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
       - name: Generate metadata (tags and labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             ${{ env.REGISTRY_IMAGE }}
-            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKER_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ matrix.platform }}
 
       - name: Build and push by digest
         id: build
@@ -70,6 +73,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Push to GHCR always. Docker Hub push happens only if logged in.
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -106,12 +110,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
+      # GHCR login
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -119,28 +118,40 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate metadata (tags and labels)
+      # Docker Hub login (optional)
+      - name: Log in to Docker Hub
+        id: dockerhub
+        uses: docker/login-action@v3
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Generate metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             ${{ env.REGISTRY_IMAGE }}
-            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKER_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
-      - name: Create and push manifest
+      # Create multi-arch manifest and push to GHCR
+      - name: Push manifest to GHCR
         run: |
           cd /tmp/digests
           images=$(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
           docker buildx imagetools create $(jq -r '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") $images
 
-      - name: Push to GHCR
+      # If Docker Hub login succeeded, also push manifest there
+      - name: Push manifest to Docker Hub
+        if: steps.dockerhub.outcome == 'success'
         run: |
           cd /tmp/digests
-          images=$(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
+          images=$(printf '${{ env.DOCKER_IMAGE }}@sha256:%s ' *)
           docker buildx imagetools create $(jq -r '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") $images
 
   # 仅 tag 推送时导出 tar 包作为 artifact
@@ -161,12 +172,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Build and export to tar
         uses: docker/build-push-action@v6
         with:
@@ -174,11 +179,11 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: ${{ env.REGISTRY_IMAGE }}:${{ github.ref_name }}
+          tags: ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }}
 
       - name: Compress image
         run: |
-          docker save ${{ env.REGISTRY_IMAGE }}:${{ github.ref_name }} | gzip > /tmp/computer-asset-management-${{ github.ref_name }}.tar.gz
+          docker save ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }} | gzip > /tmp/computer-asset-management-${{ github.ref_name }}.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
