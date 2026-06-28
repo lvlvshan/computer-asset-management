@@ -53,14 +53,30 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push (${{ matrix.platform }})
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ env.REGISTRY_IMAGE }}:${{ steps.platform.outputs.tag }}
-          provenance: false
-          sbom: false
+        id: build
+        continue-on-error: true
+        env:
+          TAG: ${{ steps.platform.outputs.tag }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker buildx build \
+            --platform "$PLATFORM" \
+            --tag ${{ env.REGISTRY_IMAGE }}:$TAG \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            . 2>&1 | tee /tmp/docker-build-$TAG.log
+          exit_code=$?
+          echo "EXIT_CODE=$exit_code" >> "$GITHUB_OUTPUT"
+          exit $exit_code
+
+      - name: Show error log on failure
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::group::Docker build error log"
+          tail -100 /tmp/docker-build-${{ steps.platform.outputs.tag }}.log
+          echo "::endgroup::"
+          exit 1
 
   merge:
     name: Create multi-arch manifest
