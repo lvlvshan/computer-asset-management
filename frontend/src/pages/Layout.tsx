@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Layout as AntLayout, Menu, Avatar, Dropdown, Modal, Form, Input, message } from 'antd'
+import { useQuery } from '@tanstack/react-query'
 import {
   DesktopOutlined,
   CheckCircleOutlined,
@@ -13,7 +14,7 @@ import {
   FileTextOutlined,
 } from '@ant-design/icons'
 import { useUserStore } from '../stores/userStore'
-import { authApi } from '../api'
+import { authApi, approvalApi, maintenanceApi } from '../api'
 import ErrorBoundary from '../components/ErrorBoundary'
 
 const { Header, Content, Sider } = AntLayout
@@ -46,6 +47,21 @@ const Layout: React.FC = () => {
     }
   }, [])
 
+  // 获取管理员待审批数量
+  const { data: pendingApprovals = 0 } = useQuery({
+    queryKey: ['pending-counts', 'approvals'],
+    queryFn: () => approvalApi.getList({ status: 'PENDING' }).then((r) => r.data.length),
+    refetchInterval: 30000,
+    enabled: user?.role === 'ADMIN',
+  })
+
+  const { data: pendingMaintenance = 0 } = useQuery({
+    queryKey: ['pending-counts', 'maintenance'],
+    queryFn: () => maintenanceApi.getApprovals({ status: 'PENDING' }).then((r) => r.data.length),
+    refetchInterval: 30000,
+    enabled: user?.role === 'ADMIN',
+  })
+
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -70,15 +86,23 @@ const Layout: React.FC = () => {
 
   const getMenuItems = () => {
     const role = user?.role
-    const items: { key: string; icon: React.ReactNode; label: string }[] = []
+    const items: { key: string; icon: React.ReactNode; label: React.ReactNode }[] = []
 
     if (role === 'ADMIN' || role === 'STAFF') {
       items.push({ key: '/devices', icon: <DesktopOutlined />, label: '设备管理' })
     }
 
     if (role === 'ADMIN') {
-      items.push({ key: '/approvals', icon: <CheckCircleOutlined />, label: '采集审批' })
-      items.push({ key: '/maintenance/approvals', icon: <ToolOutlined />, label: '维修审批' })
+      items.push({
+        key: '/approvals',
+        icon: <CheckCircleOutlined />,
+        label: pendingApprovals > 0 ? `采集审批 (${pendingApprovals})` : '采集审批',
+      })
+      items.push({
+        key: '/maintenance/approvals',
+        icon: <ToolOutlined />,
+        label: pendingMaintenance > 0 ? `维修审批 (${pendingMaintenance})` : '维修审批',
+      })
       items.push({ key: '/users', icon: <UserOutlined />, label: '用户管理' })
       items.push({ key: '/data-management', icon: <DatabaseOutlined />, label: '数据管理' })
     }

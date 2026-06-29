@@ -10,9 +10,31 @@ export async function getDevicesForMaintenance(req: AuthRequest, res: Response) 
     const where: any = {}
     if (status) where.status = status
     if (search) {
+      const s = search as string
       where.OR = [
-        { name: { contains: search as string } },
-        { deviceCode: { contains: search as string } },
+        // Device 顶层字符串字段
+        { name: { contains: s } },
+        { deviceCode: { contains: s } },
+        { currentUserName: { contains: s } },
+        { organization: { contains: s } },
+        { location: { contains: s } },
+        // DeviceHardware 1:1 关联字段（同一个嵌套 OR 保证只 JOIN 一次）
+        {
+          hardware: {
+            OR: [
+              { cpu: { contains: s } },
+              { memory: { contains: s } },
+              { disk: { contains: s } },
+              { gpu: { contains: s } },
+              { macAddress: { contains: s } },
+              { os: { contains: s } },
+              { motherboard: { contains: s } },
+              { networkCards: { contains: s } },
+            ],
+          },
+        },
+        // 系统用户名
+        { currentUser: { username: { contains: s } } },
       ]
     }
 
@@ -25,6 +47,7 @@ export async function getDevicesForMaintenance(req: AuthRequest, res: Response) 
         status: true,
         organization: true,
         location: true,
+        hardware: { select: { macAddress: true } },
         currentUser: { select: { id: true, username: true } },
       },
       orderBy: { createdAt: 'desc' },

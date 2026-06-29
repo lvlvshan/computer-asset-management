@@ -61,6 +61,11 @@ const MaintenanceDeviceList: React.FC = () => {
       render: (loc?: string) => loc || '-',
     },
     {
+      title: 'MAC 地址',
+      key: 'macAddress',
+      render: (_: unknown, record: any) => record.hardware?.macAddress || '-',
+    },
+    {
       title: '操作',
       key: 'action',
       render: (_: unknown, record: any) => (
@@ -82,7 +87,7 @@ const MaintenanceDeviceList: React.FC = () => {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <Space>
           <Input
-            placeholder="搜索设备名称或编号"
+            placeholder="搜索设备名称、编号、配置、使用人等全部字段"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 250 }}

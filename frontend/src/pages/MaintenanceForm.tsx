@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Form, Input, InputNumber, Select, Button, Card, message, DatePicker, Space, Descriptions, Tag } from 'antd'
 import { ArrowLeftOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { deviceApi, maintenanceApi } from '../api'
 
 const statusMap: Record<string, { text: string; color: string }> = {
@@ -85,7 +86,7 @@ const MaintenanceForm: React.FC = () => {
       </Card>
 
       <Card title="维修信息">
-        <Form form={form} layout="vertical" onFinish={onFinish} style={{ maxWidth: 600 }}>
+        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ startDate: dayjs() }} style={{ maxWidth: 600 }}>
           <Form.Item
             name="maintenanceType"
             label="维修类型"

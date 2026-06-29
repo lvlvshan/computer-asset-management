@@ -24,7 +24,11 @@ const Login: React.FC = () => {
       setUser(user)
 
       message.success('登录成功')
-      navigate('/')
+      if (user.role === 'MAINTENANCE') {
+        navigate('/maintenance/devices', { replace: true })
+      } else {
+        navigate('/devices', { replace: true })
+      }
     } catch (error: any) {
       message.error(error.response?.data?.error || '登录失败')
     } finally {
