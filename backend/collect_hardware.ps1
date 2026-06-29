@@ -58,7 +58,7 @@ $gpus = Get-CimInstance Win32_VideoController | ForEach-Object {
 }
 
 # Network (IPv4 only)
-$networkAdapters = Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.MACAddress -ne $null -and $_.NetConnectionStatus -eq 2 } | ForEach-Object {
+$networkAdapters = Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.MACAddress -ne $null -and $_.NetConnectionStatus -eq 2 -and $_.AdapterTypeId -eq 0 } | ForEach-Object {
     $idx = $_.InterfaceIndex
     $ipConfig = Get-CimInstance Win32_NetworkAdapterConfiguration -Filter "InterfaceIndex=$idx" | Where-Object { $_.IPAddress -ne $null }
     $ipv4 = $null

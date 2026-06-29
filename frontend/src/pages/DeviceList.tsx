@@ -40,7 +40,6 @@ const DeviceList: React.FC = () => {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>()
-  const [orgFilter, setOrgFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
   const [macFilter, setMacFilter] = useState('')
   const [hardwareFilter, setHardwareFilter] = useState('')
@@ -54,11 +53,10 @@ const DeviceList: React.FC = () => {
   const [batchLoading, setBatchLoading] = useState(false)
 
   const { data: devices = [], isLoading } = useQuery({
-    queryKey: ['devices', { status: statusFilter, search, organization: orgFilter, location: locationFilter, macAddress: macFilter, hardware: hardwareFilter, fromApprovalDate: approvalDateRange?.[0]?.toISOString(), toApprovalDate: approvalDateRange?.[1]?.toISOString() }],
+    queryKey: ['devices', { status: statusFilter, search, location: locationFilter, macAddress: macFilter, hardware: hardwareFilter, fromApprovalDate: approvalDateRange?.[0]?.toISOString(), toApprovalDate: approvalDateRange?.[1]?.toISOString() }],
     queryFn: () => deviceApi.getList({
       status: statusFilter,
       search,
-      organization: orgFilter || undefined,
       location: locationFilter || undefined,
       macAddress: macFilter || undefined,
       hardware: hardwareFilter || undefined,
@@ -273,14 +271,13 @@ const DeviceList: React.FC = () => {
   const clearAllFilters = () => {
     setSearch('')
     setStatusFilter(undefined)
-    setOrgFilter('')
     setLocationFilter('')
     setMacFilter('')
     setHardwareFilter('')
     setApprovalDateRange(null)
   }
 
-  const hasAdvancedFilters = orgFilter || locationFilter || macFilter || hardwareFilter || approvalDateRange
+  const hasAdvancedFilters = locationFilter || macFilter || hardwareFilter || approvalDateRange
 
   return (
     <div>
@@ -289,7 +286,7 @@ const DeviceList: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <Space wrap>
             <Input
-              placeholder="搜索设备名称或编号"
+              placeholder="搜索设备名称、编号、使用人"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ width: 220 }}
@@ -348,16 +345,6 @@ const DeviceList: React.FC = () => {
             }}
           >
             <Space wrap size="middle">
-              <div>
-                <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>部门</div>
-                <Input
-                  placeholder="输入部门关键字"
-                  value={orgFilter}
-                  onChange={(e) => setOrgFilter(e.target.value)}
-                  style={{ width: 160 }}
-                  allowClear
-                />
-              </div>
               <div>
                 <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>位置</div>
                 <Input
