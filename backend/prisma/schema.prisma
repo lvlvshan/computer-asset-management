@@ -125,15 +125,16 @@ model PendingMaintenance {
 model DeviceHistoricalUser {
   id          String   @id @default(uuid())
   deviceId    String
-  userId      String
+  userId      String?
   changedBy   String   // 操作人 ID
   changeReason String  // 变更原因：分配/调岗/归还/其他
   startDate   DateTime
   endDate     DateTime?
+  userName    String?  // 纯文本使用人姓名（非系统用户时使用）
   createdAt   DateTime @default(now())
 
   device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
 
   @@map("device_historical_users")
 }

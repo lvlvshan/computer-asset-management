@@ -154,10 +154,19 @@ export async function approveApproval(req: AuthRequest, res: Response) {
             },
           })
         } else {
-          // 未匹配到系统用户 → 存为纯文本
+          // 未匹配到系统用户 → 存为纯文本，并记录历史
           await tx.device.update({
             where: { id: device.id },
             data: { currentUserName: hardwareData.userName },
+          })
+          await tx.deviceHistoricalUser.create({
+            data: {
+              deviceId: device.id,
+              userName: hardwareData.userName,
+              changedBy: userId!,
+              changeReason: '分配',
+              startDate: new Date(),
+            },
           })
         }
       }

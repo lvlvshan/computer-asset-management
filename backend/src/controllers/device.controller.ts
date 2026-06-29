@@ -163,7 +163,21 @@ export async function getDeviceDetail(req: AuthRequest, res: Response) {
       }))
     }
 
-    res.json({ ...device, hardwareVersions })
+    // 解析历史记录中的 changedBy 为用户姓名
+    const changedByUserIds = [...new Set(device.historicalUsers.map(h => h.changedBy))]
+    const changedByUsers = changedByUserIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: changedByUserIds } },
+          select: { id: true, username: true },
+        })
+      : []
+    const userMap = Object.fromEntries(changedByUsers.map(u => [u.id, u.username]))
+    const historicalUsers = device.historicalUsers.map(h => ({
+      ...h,
+      changedBy: userMap[h.changedBy] || h.changedBy,
+    }))
+
+    res.json({ ...device, hardwareVersions, historicalUsers })
   } catch (error) {
     console.error('获取设备详情错误:', error)
     res.status(500).json({ error: '服务器错误' })
@@ -179,6 +193,7 @@ export async function createDevice(req: AuthRequest, res: Response) {
       name,
       status = 'IDLE',
       currentUserId,
+      currentUserName,
       organization,
       location,
       purchaseDate,
@@ -198,6 +213,7 @@ export async function createDevice(req: AuthRequest, res: Response) {
         name,
         status: status,
         currentUserId,
+        currentUserName,
         organization,
         location,
         purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
@@ -210,12 +226,22 @@ export async function createDevice(req: AuthRequest, res: Response) {
       },
     })
 
-    // 如果有初始使用人，记录历史（仅对有效用户 ID）
+    // 如果有初始使用人，记录历史
     if (currentUserId && currentUserId.length === 36) {
       await prisma.deviceHistoricalUser.create({
         data: {
           deviceId: device.id,
           userId: currentUserId,
+          changedBy: userId!,
+          changeReason: '新配',
+          startDate: new Date(),
+        },
+      })
+    } else if (currentUserName) {
+      await prisma.deviceHistoricalUser.create({
+        data: {
+          deviceId: device.id,
+          userName: currentUserName,
           changedBy: userId!,
           changeReason: '新配',
           startDate: new Date(),
@@ -234,7 +260,15 @@ export async function createDevice(req: AuthRequest, res: Response) {
 export async function updateDevice(req: AuthRequest, res: Response) {
   try {
     const { id } = req.params
+    const { userId: operatorId } = req
     const updateData: any = {}
+
+    // 先获取当前设备，用于判断使用人变化
+    const oldDevice = await prisma.device.findUnique({ where: { id } })
+    if (!oldDevice) {
+      res.status(404).json({ error: '设备不存在' })
+      return
+    }
 
     const allowedFields = ['name', 'status', 'organization', 'location', 'purchaseDate', 'warrantyEnd', 'currentUserName']
     for (const field of allowedFields) {
@@ -247,9 +281,36 @@ export async function updateDevice(req: AuthRequest, res: Response) {
       }
     }
 
+    // 如果使用人变化，管理历史记录
+    if (req.body.currentUserName !== undefined && req.body.currentUserName !== oldDevice.currentUserName) {
+      // 结束当前有效历史记录
+      await prisma.deviceHistoricalUser.updateMany({
+        where: { deviceId: id, endDate: null },
+        data: { endDate: new Date() },
+      })
+
+      // 如果新使用人不为空，创建新历史记录
+      if (req.body.currentUserName) {
+        await prisma.deviceHistoricalUser.create({
+          data: {
+            deviceId: id,
+            userName: req.body.currentUserName,
+            changedBy: operatorId!,
+            changeReason: '调岗',
+            startDate: new Date(),
+          },
+        })
+      }
+    }
+
     const device = await prisma.device.update({
       where: { id },
       data: updateData,
+      include: {
+        currentUser: {
+          select: { id: true, username: true },
+        },
+      },
     })
 
     res.json(device)
@@ -300,6 +361,19 @@ export async function allocateUser(req: AuthRequest, res: Response) {
         where: {
           deviceId: id,
           userId: device.currentUserId,
+          endDate: null,
+        },
+        data: {
+          endDate: new Date(),
+        },
+      })
+    } else if (device.currentUserName) {
+      // 纯文本使用人，结束其历史记录
+      await prisma.deviceHistoricalUser.updateMany({
+        where: {
+          deviceId: id,
+          userId: null,
+          userName: device.currentUserName,
           endDate: null,
         },
         data: {
@@ -362,6 +436,19 @@ export async function returnDevice(req: AuthRequest, res: Response) {
           changeReason: '归还',
         },
       })
+    } else if (device.currentUserName) {
+      await prisma.deviceHistoricalUser.updateMany({
+        where: {
+          deviceId: id,
+          userId: null,
+          userName: device.currentUserName,
+          endDate: null,
+        },
+        data: {
+          endDate: new Date(),
+          changeReason: '归还',
+        },
+      })
     }
 
     // 更新设备状态
@@ -369,6 +456,7 @@ export async function returnDevice(req: AuthRequest, res: Response) {
       where: { id },
       data: {
         currentUserId: null,
+        currentUserName: null,
         status: 'IDLE',
       },
       include: {

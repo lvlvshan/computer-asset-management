@@ -110,7 +110,7 @@ const DeviceDetail: React.FC = () => {
     children: (
       <div>
         <p style={{ margin: 0 }}>
-          <strong>{record.user.username}</strong>
+          <strong>{record.user?.username || record.userName}</strong>
           <span style={{ marginLeft: 8, color: '#999' }}>
             {record.changeReason}
           </span>

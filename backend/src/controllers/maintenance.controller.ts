@@ -228,10 +228,19 @@ export async function approveMaintenance(req: AuthRequest, res: Response) {
             },
           })
         } else {
-          // 未匹配到系统用户 → 存为纯文本
+          // 未匹配到系统用户 → 存为纯文本，并记录历史
           await tx.device.update({
             where: { id: pending.deviceId },
             data: { currentUserName: pending.currentUserName },
+          })
+          await tx.deviceHistoricalUser.create({
+            data: {
+              deviceId: pending.deviceId,
+              userName: pending.currentUserName,
+              changedBy: approverId!,
+              changeReason: '维修分配',
+              startDate: new Date(),
+            },
           })
         }
       }
