@@ -45,6 +45,7 @@ export async function getDevicesForMaintenance(req: AuthRequest, res: Response) 
         deviceCode: true,
         name: true,
         status: true,
+        currentUserName: true,
         organization: true,
         location: true,
         hardware: { select: { macAddress: true } },
