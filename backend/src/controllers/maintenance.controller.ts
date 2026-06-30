@@ -133,7 +133,15 @@ export async function getPendingMaintenanceApprovals(req: AuthRequest, res: Resp
     const approvals = await prisma.pendingMaintenance.findMany({
       where,
       include: {
-        device: { select: { id: true, deviceCode: true, name: true } },
+        device: {
+          select: {
+            id: true,
+            deviceCode: true,
+            name: true,
+            currentUserName: true,
+            currentUser: { select: { id: true, username: true } },
+          },
+        },
         submitter: { select: { id: true, username: true } },
         approver: { select: { id: true, username: true } },
       },
@@ -155,7 +163,15 @@ export async function getMaintenanceApprovalDetail(req: AuthRequest, res: Respon
     const approval = await prisma.pendingMaintenance.findUnique({
       where: { id },
       include: {
-        device: { select: { id: true, deviceCode: true, name: true } },
+        device: {
+          select: {
+            id: true,
+            deviceCode: true,
+            name: true,
+            currentUserName: true,
+            currentUser: { select: { id: true, username: true } },
+          },
+        },
         submitter: { select: { id: true, username: true } },
         approver: { select: { id: true, username: true } },
       },
@@ -166,7 +182,14 @@ export async function getMaintenanceApprovalDetail(req: AuthRequest, res: Respon
       return
     }
 
-    res.json(approval)
+    // 查询该设备的历史维修记录
+    const maintenanceRecords = await prisma.deviceMaintenance.findMany({
+      where: { deviceId: approval.deviceId },
+      orderBy: { startDate: 'desc' },
+      include: { user: { select: { id: true, username: true } } },
+    })
+
+    res.json({ ...approval, maintenanceRecords })
   } catch (error) {
     console.error('获取维修审批详情错误:', error)
     res.status(500).json({ error: '服务器错误' })

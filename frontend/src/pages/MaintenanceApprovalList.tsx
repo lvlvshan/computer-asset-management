@@ -1,7 +1,7 @@
 // 管理员 - 维修审批
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Table, Button, Tag, Space, Modal, Input, message, Tabs, Descriptions, Card, Drawer, Empty } from 'antd'
+import { Table, Button, Tag, Space, Modal, Input, message, Tabs, Descriptions, Card, Drawer, Empty, Timeline, Spin } from 'antd'
 import { CheckOutlined, CloseOutlined, EyeOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
 import { maintenanceApi } from '../api'
 
@@ -24,6 +24,7 @@ const MaintenanceApprovalList: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerVisible, setDrawerVisible] = useState(false)
   const [detailRecord, setDetailRecord] = useState<any>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
 
   const { data: approvals = [], isLoading } = useQuery({
     queryKey: ['maintenance-approvals'],
@@ -54,9 +55,17 @@ const MaintenanceApprovalList: React.FC = () => {
   const pendingItems = approvals.filter((a: any) => a.status === 'PENDING')
   const historyItems = approvals.filter((a: any) => a.status !== 'PENDING')
 
-  const showDetail = (record: any) => {
-    setDetailRecord(record)
+  const showDetail = async (record: any) => {
     setDrawerVisible(true)
+    setDetailLoading(true)
+    try {
+      const res = await maintenanceApi.getApprovalDetail(record.id)
+      setDetailRecord(res.data)
+    } catch {
+      setDetailRecord(record)
+    } finally {
+      setDetailLoading(false)
+    }
   }
 
   const handleApprove = (id: string) => {
@@ -68,7 +77,8 @@ const MaintenanceApprovalList: React.FC = () => {
   }
 
   const pendingColumns = [
-    { title: '设备', key: 'device', render: (_: unknown, r: any) => r.device ? `${r.device.deviceCode} - ${r.device.name}` : '-' },
+    { title: '资产编号', key: 'device', render: (_: unknown, r: any) => r.device ? `${r.device.deviceCode} - ${r.device.name}` : '-' },
+    { title: '使用人', key: 'currentUser', render: (_: unknown, r: any) => r.device?.currentUserName || r.device?.currentUser?.username || '-' },
     { title: '维修类型', dataIndex: 'maintenanceType', key: 'type', render: (t: string) => typeMap[t] || t },
     { title: '故障描述', dataIndex: 'description', key: 'desc', ellipsis: true },
     { title: '提交人', key: 'submitter', render: (_: unknown, r: any) => r.submitter?.username || '-' },
@@ -92,7 +102,8 @@ const MaintenanceApprovalList: React.FC = () => {
   ]
 
   const historyColumns = [
-    { title: '设备', key: 'device', render: (_: unknown, r: any) => r.device ? `${r.device.deviceCode} - ${r.device.name}` : '-' },
+    { title: '资产编号', key: 'device', render: (_: unknown, r: any) => r.device ? `${r.device.deviceCode} - ${r.device.name}` : '-' },
+    { title: '使用人', key: 'currentUser', render: (_: unknown, r: any) => r.device?.currentUserName || r.device?.currentUser?.username || '-' },
     { title: '维修类型', dataIndex: 'maintenanceType', key: 'type', render: (t: string) => typeMap[t] || t },
     { title: '故障描述', dataIndex: 'description', key: 'desc', ellipsis: true },
     { title: '提交人', key: 'submitter', render: (_: unknown, r: any) => r.submitter?.username || '-' },
@@ -145,7 +156,8 @@ const MaintenanceApprovalList: React.FC = () => {
         width={500}
       >
         {detailRecord ? (
-          <>
+          <Spin spinning={detailLoading}>
+            <>
             <Card title="设备信息" size="small" style={{ marginBottom: 16 }}>
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="设备">
@@ -189,6 +201,39 @@ const MaintenanceApprovalList: React.FC = () => {
                 )}
               </Descriptions>
             </Card>
+            {detailRecord.maintenanceRecords && detailRecord.maintenanceRecords.length > 0 && (
+              <Card title="历史维修记录" size="small" style={{ marginTop: 16 }}>
+                <Timeline
+                  items={detailRecord.maintenanceRecords.map((r: any) => ({
+                    color: r.endDate ? 'green' : 'orange',
+                    children: (
+                      <div>
+                        <p style={{ margin: 0 }}>
+                          <Tag color={r.maintenanceType === 'HARDWARE' ? 'red' : 'blue'}>
+                            {r.maintenanceType === 'HARDWARE' ? '硬件' : r.maintenanceType === 'SOFTWARE' ? '软件' : '其他'}
+                          </Tag>
+                          <span style={{ marginLeft: 8 }}>{r.description}</span>
+                        </p>
+                        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#999' }}>
+                          送修日期：{new Date(r.startDate).toLocaleDateString()}
+                          {r.endDate ? ` | 修复日期：${new Date(r.endDate).toLocaleDateString()}` : ' (维修中)'}
+                        </p>
+                        {r.solution && (
+                          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>
+                            处理方案：{r.solution}
+                          </p>
+                        )}
+                        {r.cost && (
+                          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#999' }}>
+                            费用：¥{r.cost}
+                          </p>
+                        )}
+                      </div>
+                    ),
+                  }))}
+                />
+              </Card>
+            )}
             {detailRecord.status === 'PENDING' && (
               <div style={{ marginTop: 16, textAlign: 'right' }}>
                 <Space>
@@ -208,8 +253,9 @@ const MaintenanceApprovalList: React.FC = () => {
                 </Space>
               </div>
             )}
-          </>
-        ) : (
+            </>
+            </Spin>
+          ) : (
           <Empty />
         )}
       </Drawer>
