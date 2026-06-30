@@ -33,9 +33,11 @@ export async function submitScanData(req: AuthRequest, res: Response) {
       return
     }
 
-    // 从采集的 networkCards 中提取第一个 IPv4 地址
+    // 从采集数据中提取 IPv4 地址（优先使用脚本识别的主 IP）
     let collectedIpv4 = requestIp
-    if (Array.isArray(hardwareData.networkCards)) {
+    if (hardwareData.primaryIp && typeof hardwareData.primaryIp === 'string' && hardwareData.primaryIp.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+      collectedIpv4 = hardwareData.primaryIp
+    } else if (Array.isArray(hardwareData.networkCards)) {
       const ipv4Address = hardwareData.networkCards.find((nc: any) => nc.IPv4Address)?.IPv4Address
       if (ipv4Address && ipv4Address.match(/^\d+\.\d+\.\d+\.\d+$/)) {
         collectedIpv4 = ipv4Address
@@ -152,7 +154,7 @@ $networkAdapters = Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.MACA
             if ($ip -match '^\\d+\\.\\d+\\.\\d+\\.\\d+$') { $ipv4 = $ip; break }
         }
     }
-    @{Name = $_.Name; MACAddress = $_.MACAddress; IPv4Address = $ipv4}
+    @{Name = $_.Name; InterfaceIndex = $_.InterfaceIndex; MACAddress = $_.MACAddress; IPv4Address = $ipv4}
 }
 
 # Motherboard
@@ -166,8 +168,14 @@ $osInfo = "$($os.Caption) $($os.OSArchitecture)"
 # Hostname
 $hostname = $env:COMPUTERNAME
 
-# MAC Address
-$macAddress = ($networkAdapters | Select-Object -First 1).MACAddress
+# 通过路由表确定连接服务器的网卡
+$defaultRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object ifMetric, RouteMetric | Select-Object -First 1
+if ($defaultRoute) {
+    $primaryAdapter = $networkAdapters | Where-Object { $_.InterfaceIndex -eq $defaultRoute.InterfaceIndex } | Select-Object -First 1
+}
+if (-not $primaryAdapter) { $primaryAdapter = $networkAdapters | Select-Object -First 1 }
+$macAddress = $primaryAdapter.MACAddress
+$primaryIPv4 = $primaryAdapter.IPv4Address
 
 # Build data object
 $hardwareData = @{
@@ -183,6 +191,7 @@ $hardwareData = @{
     motherboard = $moboInfo
     os = $osInfo
     macAddress = $macAddress
+    primaryIp = $primaryIPv4
     collectedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 }
 
@@ -195,6 +204,7 @@ Write-Host "资产编号：$assetCode"
 Write-Host "使用人：   $userName"
 Write-Host "位置：   $location"
 Write-Host "主机名：   $hostname"
+Write-Host "IP：         $primaryIPv4"
 Write-Host "CPU：        $cpuInfo"
 Write-Host "内存：     $memoryInfo"
 Write-Host ""
