@@ -1,8 +1,8 @@
 // 维修人员 - 设备列表
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Table, Button, Input, Select, Space, Tag } from 'antd'
-import { SearchOutlined, ToolOutlined } from '@ant-design/icons'
+import { SearchOutlined, ToolOutlined, EyeOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { maintenanceApi } from '../api'
 
@@ -22,6 +22,31 @@ const MaintenanceDeviceList: React.FC = () => {
     queryKey: ['maintenance-devices', { status: statusFilter, search }],
     queryFn: () => maintenanceApi.getDevices({ status: statusFilter, search }).then((r) => r.data),
   })
+
+  // MAC 分组（与 DeviceList.tsx 模式一致）
+  const groupedDevices = useMemo(() => {
+    const groups: Record<string, any[]> = {}
+    for (const d of devices) {
+      const mac = d.hardware?.macAddress
+      if (!mac) {
+        groups['__no_mac_' + d.id] = [d]
+      } else {
+        if (!groups[mac]) groups[mac] = []
+        groups[mac].push(d)
+      }
+    }
+    const result: any[] = []
+    for (const [mac, list] of Object.entries(groups)) {
+      if (mac.startsWith('__no_mac_') || list.length === 1) {
+        result.push(list[0])
+      } else {
+        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        const primary = { ...list[0], _children: list.slice(1) }
+        result.push(primary)
+      }
+    }
+    return result
+  }, [devices])
 
   const columns = [
     {
@@ -110,9 +135,38 @@ const MaintenanceDeviceList: React.FC = () => {
       </div>
       <Table
         columns={columns}
-        dataSource={devices}
+        dataSource={groupedDevices}
         loading={isLoading}
         rowKey="id"
+        expandable={{
+          expandedRowRender: (record: any) => {
+            const children = record._children
+            if (!children?.length) return null
+            // 子行只有"查看"按钮，不提供"提交维修"
+            const subColumns = columns.map(col => {
+              if (col.key === 'action') {
+                return {
+                  ...col,
+                  render: (_: unknown, subRecord: any) => (
+                    <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/devices/${subRecord.id}`)}>查看</Button>
+                  ),
+                }
+              }
+              return col
+            })
+            return (
+              <Table
+                columns={subColumns}
+                dataSource={children}
+                rowKey="id"
+                pagination={false}
+                showHeader={false}
+                style={{ margin: 0 }}
+              />
+            )
+          },
+          rowExpandable: (record: any) => !!record._children?.length,
+        }}
         pagination={{
           showSizeChanger: true,
           pageSizeOptions: ['10', '20', '50', '100'],

@@ -1,5 +1,6 @@
 // 管理员 - 维修审批
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Table, Button, Tag, Space, Modal, Input, message, Tabs, Descriptions, Card, Drawer, Empty, Timeline, Spin } from 'antd'
 import { CheckOutlined, CloseOutlined, EyeOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
@@ -18,6 +19,7 @@ const typeMap: Record<string, string> = {
 }
 
 const MaintenanceApprovalList: React.FC = () => {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [rejectModalOpen, setRejectModalOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
@@ -78,6 +80,7 @@ const MaintenanceApprovalList: React.FC = () => {
 
   const pendingColumns = [
     { title: '资产编号', key: 'device', render: (_: unknown, r: any) => r.device ? `${r.device.deviceCode} - ${r.device.name}` : '-' },
+    { title: 'MAC 地址', key: 'macAddress', render: (_: unknown, r: any) => r.device?.hardware?.macAddress || '-' },
     { title: '使用人', key: 'currentUser', render: (_: unknown, r: any) => r.device?.currentUserName || r.device?.currentUser?.username || '-' },
     { title: '维修类型', dataIndex: 'maintenanceType', key: 'type', render: (t: string) => typeMap[t] || t },
     { title: '故障描述', dataIndex: 'description', key: 'desc', ellipsis: true },
@@ -96,6 +99,11 @@ const MaintenanceApprovalList: React.FC = () => {
           <Button size="small" icon={<EyeOutlined />} onClick={() => showDetail(record)}>
             详情
           </Button>
+          {record.device && (
+            <Button size="small" onClick={() => navigate(`/devices/${record.device.id}`)}>
+              查看设备
+            </Button>
+          )}
         </Space>
       ),
     },
@@ -103,6 +111,7 @@ const MaintenanceApprovalList: React.FC = () => {
 
   const historyColumns = [
     { title: '资产编号', key: 'device', render: (_: unknown, r: any) => r.device ? `${r.device.deviceCode} - ${r.device.name}` : '-' },
+    { title: 'MAC 地址', key: 'macAddress', render: (_: unknown, r: any) => r.device?.hardware?.macAddress || '-' },
     { title: '使用人', key: 'currentUser', render: (_: unknown, r: any) => r.device?.currentUserName || r.device?.currentUser?.username || '-' },
     { title: '维修类型', dataIndex: 'maintenanceType', key: 'type', render: (t: string) => typeMap[t] || t },
     { title: '故障描述', dataIndex: 'description', key: 'desc', ellipsis: true },
@@ -164,6 +173,9 @@ const MaintenanceApprovalList: React.FC = () => {
                   {detailRecord.device
                     ? `${detailRecord.device.deviceCode} - ${detailRecord.device.name}`
                     : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="MAC 地址">
+                  {detailRecord.device?.hardware?.macAddress || '-'}
                 </Descriptions.Item>
                 <Descriptions.Item label="提交人">
                   {detailRecord.submitter?.username || '-'}
