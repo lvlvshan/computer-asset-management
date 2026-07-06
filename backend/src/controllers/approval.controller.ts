@@ -101,104 +101,151 @@ export async function approveApproval(req: AuthRequest, res: Response) {
     const hardwareData = JSON.parse(approval.hardwareData)
     const assetCode = hardwareData.assetCode?.trim() || `DEV${Date.now()}`
 
-    // 事务处理：创建设备和硬件信息
+    // 辅助函数：将硬件字段转为字符串
+    const toFieldString = (val: any): string => {
+      if (!val) return ''
+      if (typeof val === 'string') return val
+      if (Array.isArray(val)) {
+        return val.map((item: any) => {
+          if (typeof item === 'object') return Object.values(item).filter(v => v != null).join(' ')
+          return String(item)
+        }).join(', ')
+      }
+      if (typeof val === 'object') return Object.values(val).filter(v => v != null).join(' ')
+      return String(val)
+    }
+
+    // 事务处理：更新或创建设备和硬件信息
     const result = await prisma.$transaction(async (tx) => {
-      // 每次审批都创建新设备，支持 MAC 分组展示
-      const device = await tx.device.create({
-        data: {
-          deviceCode: assetCode,
-          name: approval.deviceName || hardwareData.hostname || '未命名设备',
-          status: 'IN_USE',
-          location: hardwareData.location || approval.location || '',
-        },
-      })
+      let device
 
-      // 如果存在旧设备（同 MAC），将旧设备的使用人历史复制到新设备
       if (approval.deviceId) {
-        const oldHistories = await tx.deviceHistoricalUser.findMany({
-          where: { deviceId: approval.deviceId },
+        // ======== 同 MAC 已有设备 → 更新现有设备 ========
+        const oldDevice = await tx.device.findUnique({ where: { id: approval.deviceId } })
+        if (!oldDevice) {
+          // 旧设备被删除，回退到创建新设备
+          device = await tx.device.create({
+            data: {
+              deviceCode: assetCode,
+              name: approval.deviceName || hardwareData.hostname || '未命名设备',
+              status: 'IN_USE',
+              location: hardwareData.location || approval.location || '',
+            },
+          })
+          if (hardwareData.userName) {
+            const existingUser = await tx.user.findFirst({ where: { username: hardwareData.userName } })
+            if (existingUser) {
+              await tx.device.update({ where: { id: device.id }, data: { currentUserId: existingUser.id } })
+              await tx.deviceHistoricalUser.create({
+                data: { deviceId: device.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+              })
+            } else {
+              await tx.device.update({ where: { id: device.id }, data: { currentUserName: hardwareData.userName } })
+              await tx.deviceHistoricalUser.create({
+                data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+              })
+            }
+          }
+          await tx.deviceHardware.create({
+            data: {
+              deviceId: device.id,
+              cpu: hardwareData.cpu || '', memory: hardwareData.memory || '', disk: toFieldString(hardwareData.disk),
+              gpu: toFieldString(hardwareData.gpu), networkCards: JSON.stringify(hardwareData.networkCards || []),
+              motherboard: hardwareData.motherboard || '', os: hardwareData.os || '',
+              macAddress: hardwareData.macAddress || '', submitterIp: hardwareData.submitterIp || approval.submitterIp || '',
+            },
+          })
+          return { device, approval }
+        }
+
+        // 使用人变化处理：结束旧使用人记录，创建新使用人记录
+        const newUserName = hardwareData.userName?.trim()
+        if (newUserName && newUserName !== oldDevice.currentUserName) {
+          // 结束旧使用人的当前历史
+          await tx.deviceHistoricalUser.updateMany({
+            where: { deviceId: oldDevice.id, endDate: null },
+            data: { endDate: new Date() },
+          })
+          // 创建新使用人历史
+          const existingUser = await tx.user.findFirst({ where: { username: newUserName } })
+          if (existingUser) {
+            await tx.deviceHistoricalUser.create({
+              data: { deviceId: oldDevice.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+            })
+          } else {
+            await tx.deviceHistoricalUser.create({
+              data: { deviceId: oldDevice.id, userName: newUserName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+            })
+          }
+        }
+
+        // 更新设备信息（部门以最新采集为准，使用人更新）
+        device = await tx.device.update({
+          where: { id: oldDevice.id },
+          data: {
+            deviceCode: assetCode,
+            name: approval.deviceName || hardwareData.hostname || oldDevice.name,
+            location: hardwareData.location || approval.location || oldDevice.location || '',
+            currentUserName: newUserName || oldDevice.currentUserName,
+          },
         })
-        for (const h of oldHistories) {
-          await tx.deviceHistoricalUser.create({
-            data: {
-              deviceId: device.id,
-              userId: h.userId,
-              changedBy: h.changedBy,
-              changeReason: h.changeReason,
-              startDate: h.startDate,
-              endDate: h.endDate,
-            },
-          })
-        }
-      }
 
-      // 设置设备使用人（如果提供了 userName）
-      // 优先匹配系统用户，未匹配则存为文本
-      if (hardwareData.userName) {
-        const existingUser = await tx.user.findFirst({
-          where: { username: hardwareData.userName },
+        // 更新硬件配置（同设备只保留最新硬件快照）
+        await tx.deviceHardware.update({
+          where: { deviceId: oldDevice.id },
+          data: {
+            cpu: hardwareData.cpu || '', memory: hardwareData.memory || '', disk: toFieldString(hardwareData.disk),
+            gpu: toFieldString(hardwareData.gpu), networkCards: JSON.stringify(hardwareData.networkCards || []),
+            motherboard: hardwareData.motherboard || '', os: hardwareData.os || '',
+            macAddress: hardwareData.macAddress || '', submitterIp: hardwareData.submitterIp || approval.submitterIp || '',
+          },
         })
-        if (existingUser) {
-          // 匹配到系统用户 → 关联 userId 并记录历史
-          await tx.device.update({
-            where: { id: device.id },
-            data: { currentUserId: existingUser.id },
-          })
-          await tx.deviceHistoricalUser.create({
-            data: {
-              deviceId: device.id,
-              userId: existingUser.id,
-              changedBy: userId!,
-              changeReason: '分配',
-              startDate: new Date(),
-            },
-          })
-        } else {
-          // 未匹配到系统用户 → 存为纯文本，并记录历史
-          await tx.device.update({
-            where: { id: device.id },
-            data: { currentUserName: hardwareData.userName },
-          })
-          await tx.deviceHistoricalUser.create({
-            data: {
-              deviceId: device.id,
-              userName: hardwareData.userName,
-              changedBy: userId!,
-              changeReason: '分配',
-              startDate: new Date(),
-            },
-          })
-        }
-      }
+      } else {
+        // ======== 新设备 → 创建新设备 ========
+        device = await tx.device.create({
+          data: {
+            deviceCode: assetCode,
+            name: approval.deviceName || hardwareData.hostname || '未命名设备',
+            status: 'IN_USE',
+            location: hardwareData.location || approval.location || '',
+          },
+        })
 
-      // 创建新的硬件信息
-      const toFieldString = (val: any): string => {
-        if (!val) return ''
-        if (typeof val === 'string') return val
-        if (Array.isArray(val)) {
-          return val.map((item: any) => {
-            if (typeof item === 'object') return Object.values(item).filter(v => v != null).join(' ')
-            return String(item)
-          }).join(', ')
+        // 设置设备使用人（如果提供了 userName）
+        if (hardwareData.userName) {
+          const existingUser = await tx.user.findFirst({
+            where: { username: hardwareData.userName },
+          })
+          if (existingUser) {
+            await tx.device.update({
+              where: { id: device.id },
+              data: { currentUserId: existingUser.id },
+            })
+            await tx.deviceHistoricalUser.create({
+              data: { deviceId: device.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+            })
+          } else {
+            await tx.device.update({
+              where: { id: device.id },
+              data: { currentUserName: hardwareData.userName },
+            })
+            await tx.deviceHistoricalUser.create({
+              data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+            })
+          }
         }
-        if (typeof val === 'object') return Object.values(val).filter(v => v != null).join(' ')
-        return String(val)
-      }
 
-      await tx.deviceHardware.create({
-        data: {
-          deviceId: device.id,
-          cpu: hardwareData.cpu || '',
-          memory: hardwareData.memory || '',
-          disk: toFieldString(hardwareData.disk),
-          gpu: toFieldString(hardwareData.gpu),
-          networkCards: JSON.stringify(hardwareData.networkCards || []),
-          motherboard: hardwareData.motherboard || '',
-          os: hardwareData.os || '',
-          macAddress: hardwareData.macAddress || '',
-          submitterIp: hardwareData.submitterIp || approval.submitterIp || '',
-        },
-      })
+        // 创建新的硬件信息
+        await tx.deviceHardware.create({
+          data: {
+            deviceId: device.id,
+            cpu: hardwareData.cpu || '', memory: hardwareData.memory || '', disk: toFieldString(hardwareData.disk),
+            gpu: toFieldString(hardwareData.gpu), networkCards: JSON.stringify(hardwareData.networkCards || []),
+            motherboard: hardwareData.motherboard || '', os: hardwareData.os || '',
+            macAddress: hardwareData.macAddress || '', submitterIp: hardwareData.submitterIp || approval.submitterIp || '',
+          },
+        })
+      }
 
       return { device, approval }
     })
