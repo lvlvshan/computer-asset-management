@@ -12,9 +12,9 @@ function getDbPath(): string {
   const match = dbUrl.match(/^file:(.+)$/)
   if (match) {
     const p = match[1]
-    // 如果是相对路径，基于项目根目录解析
+    // 如果是相对路径，基于 Prisma schema 目录解析（schema 在 prisma/ 目录）
     if (!path.isAbsolute(p)) {
-      return path.resolve(__dirname, '../../', p)
+      return path.resolve(__dirname, '../../prisma/', p)
     }
     return p
   }
