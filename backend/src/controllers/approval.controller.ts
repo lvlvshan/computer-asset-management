@@ -134,6 +134,7 @@ export async function approveApproval(req: AuthRequest, res: Response) {
               name: approval.deviceName || hardwareData.hostname || '未命名设备',
               status: 'IN_USE',
               location: hardwareData.location || approval.location || '',
+              organization: '未分配',
             },
           })
           if (hardwareData.userName) {
@@ -212,6 +213,7 @@ export async function approveApproval(req: AuthRequest, res: Response) {
             name: approval.deviceName || hardwareData.hostname || '未命名设备',
             status: 'IN_USE',
             location: hardwareData.location || approval.location || '',
+            organization: '未分配',
           },
         })
 
