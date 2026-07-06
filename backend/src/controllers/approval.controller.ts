@@ -233,6 +233,9 @@ export async function approveApproval(req: AuthRequest, res: Response) {
               data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
             })
           }
+          // 刷新 device 对象，确保返回的数据包含最新的使用人
+          const refreshed = await tx.device.findUnique({ where: { id: device.id } })
+          if (refreshed) device = refreshed
         }
 
         // 创建新的硬件信息
