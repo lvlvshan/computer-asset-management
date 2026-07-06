@@ -7,7 +7,7 @@ import prisma from '../prisma/client'
 // 获取设备列表
 export async function getDeviceList(req: AuthRequest, res: Response) {
   try {
-    const { status, currentUserId, search, location, macAddress, hardware, fromApprovalDate, toApprovalDate } = req.query
+    const { status, currentUserId, search, location, organization, macAddress, hardware, fromApprovalDate, toApprovalDate } = req.query
 
     const where: any = {}
 
@@ -31,6 +31,10 @@ export async function getDeviceList(req: AuthRequest, res: Response) {
 
     if (location) {
       where.location = { contains: location as string }
+    }
+
+    if (organization) {
+      where.organization = { contains: organization as string }
     }
 
     if (macAddress) {
