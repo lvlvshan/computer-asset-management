@@ -327,7 +327,19 @@ const ApprovalList: React.FC = () => {
           dataSource={pendingApprovals}
           loading={isLoading}
           rowKey="id"
-          pagination={{ pageSize: 20 }}
+          pagination={{
+            showSizeChanger: {
+              options: [
+                { value: 10, label: '10 条/页' },
+                { value: 20, label: '20 条/页' },
+                { value: 50, label: '50 条/页' },
+                { value: 100, label: '100 条/页' },
+                { value: 999999, label: '所有' },
+              ],
+            },
+            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            defaultPageSize: 20,
+          }}
           locale={{ emptyText: <Empty description="暂无待审批记录" /> }}
         />
       ),
@@ -354,7 +366,19 @@ const ApprovalList: React.FC = () => {
                   dataSource={allApprovals}
                   loading={isLoading}
                   rowKey="id"
-                  pagination={{ pageSize: 20 }}
+                  pagination={{
+                    showSizeChanger: {
+                      options: [
+                        { value: 10, label: '10 条/页' },
+                        { value: 20, label: '20 条/页' },
+                        { value: 50, label: '50 条/页' },
+                        { value: 100, label: '100 条/页' },
+                        { value: 999999, label: '所有' },
+                      ],
+                    },
+                    showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+                    defaultPageSize: 20,
+                  }}
                   locale={{ emptyText: <Empty description="暂无已审批记录" /> }}
                 />
               ),
@@ -368,7 +392,19 @@ const ApprovalList: React.FC = () => {
                   dataSource={approvedApprovals}
                   loading={isLoading}
                   rowKey="id"
-                  pagination={{ pageSize: 20 }}
+                  pagination={{
+                    showSizeChanger: {
+                      options: [
+                        { value: 10, label: '10 条/页' },
+                        { value: 20, label: '20 条/页' },
+                        { value: 50, label: '50 条/页' },
+                        { value: 100, label: '100 条/页' },
+                        { value: 999999, label: '所有' },
+                      ],
+                    },
+                    showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+                    defaultPageSize: 20,
+                  }}
                   locale={{ emptyText: <Empty description="暂无已通过记录" /> }}
                 />
               ),
@@ -382,7 +418,19 @@ const ApprovalList: React.FC = () => {
                   dataSource={rejectedApprovals}
                   loading={isLoading}
                   rowKey="id"
-                  pagination={{ pageSize: 20 }}
+                  pagination={{
+                    showSizeChanger: {
+                      options: [
+                        { value: 10, label: '10 条/页' },
+                        { value: 20, label: '20 条/页' },
+                        { value: 50, label: '50 条/页' },
+                        { value: 100, label: '100 条/页' },
+                        { value: 999999, label: '所有' },
+                      ],
+                    },
+                    showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+                    defaultPageSize: 20,
+                  }}
                   locale={{ emptyText: <Empty description="暂无已拒绝记录" /> }}
                 />
               ),

@@ -87,7 +87,15 @@ const MaintenanceHistory: React.FC = () => {
         loading={isLoading}
         rowKey="id"
         pagination={{
-          showSizeChanger: true,
+          showSizeChanger: {
+            options: [
+              { value: 10, label: '10 条/页' },
+              { value: 20, label: '20 条/页' },
+              { value: 50, label: '50 条/页' },
+              { value: 100, label: '100 条/页' },
+              { value: 999999, label: '所有' },
+            ],
+          },
           showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
           defaultPageSize: 20,
         }}
