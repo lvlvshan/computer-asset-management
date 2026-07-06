@@ -12,6 +12,10 @@ const apiClient = axios.create({
   responseType: 'json',
   // 确保请求数据正确编码
   transformRequest: [(data, headers) => {
+    if (data instanceof FormData) {
+      // FormData 上传不转换，让 axios 自动设置 Content-Type 和 boundary
+      return data
+    }
     if (headers && typeof headers === 'object') {
       headers['Content-Type'] = 'application/json; charset=utf-8'
     }

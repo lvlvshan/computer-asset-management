@@ -120,8 +120,6 @@ export const backupApi = {
   importDatabase: (file: File) => {
     const formData = new FormData()
     formData.append('database', file)
-    return apiClient.post('/backup/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    return apiClient.post('/backup/import', formData)
   },
 }
