@@ -264,7 +264,9 @@ JWT 包含 `{ userId, role }`，有效期 24 小时，密钥来自 `JWT_SECRET` 
 
 **关键设计决策**（2026-07-06 修订）：
 - **历史设计（2026-07-06 之前）**：每次审批都创建新设备，通过 MAC 分组在前端合并展示。问题：同一 MAC 产生多条设备记录，导致同一资产编号分散在不同部门，统计数据不一致。
-- **当前设计（2026-07-06 之后）**：MAC 匹配时更新现有设备，不再创建重复。使用人变更自动记录历史。
+- **当前设计（2026-07-06 之后）**：
+  - MAC 匹配时更新现有设备，不再创建重复。使用人变更自动记录历史。
+  - 审批创建设备时默认设置 `organization: '未分配'`，确保所有设备都有部门归属。
 
 ### 审批通过逻辑（approval.controller.ts）
 
@@ -272,14 +274,14 @@ JWT 包含 `{ userId, role }`，有效期 24 小时，密钥来自 `JWT_SECRET` 
 ```
 1. 查询旧设备
 2. 比较新旧使用人
-   └ 不同 → 结束旧历史（set endDate）→ 创建新历史
+   └ 不同 → 结束旧历史（set endDate = scanTime）→ 创建新历史（startDate = scanTime, location）
 3. 更新设备字段（deviceCode, name, location, currentUserName）
 4. 更新硬件配置（DeviceHardware.update）
 ```
 
 **创建分支**（`approval.deviceId` 为 null）：
 ```
-1. 创建新设备
+1. 创建新设备（organization 默认 '未分配'，防止无部门设备）
 2. 设置使用人（优先匹配系统用户 → currentUserId，否则存为 currentUserName）
 3. 创建设备硬件
 ```
@@ -306,12 +308,19 @@ JWT 包含 `{ userId, role }`，有效期 24 小时，密钥来自 `JWT_SECRET` 
 2. **管理员手动分配** — `POST /api/devices/:id/allocate`
 3. **设备归还** — `POST /api/devices/:id/return`（移除使用人）
 
-历史变更逻辑：
+历史记录字段：`startDate`、`endDate`、`location`（使用地点）
+
+历史变更逻辑（2026-07-06 修订）：
 ```
-结束当前记录 → DeviceHistoricalUser.updateMany(endDate=null → endDate=now)
-创建新记录   → DeviceHistoricalUser.create(startDate=now, endDate=null)
-更新设备     → Device.currentUser(Id|Name) = 新使用人
+采集上报时间 = hardwareData.collectedAt || approval.createdAt
+使用地点     = hardwareData.location || approval.location
+
+结束旧记录 → endDate = 新用户的采集上报时间（精确到新用户首次上报，非审批时间）
+创建新记录 → startDate = 采集上报时间, location = 使用地点
+更新设备   → Device.currentUser(Id|Name) = 新使用人
 ```
+
+**时间准确性**：历史记录的起止时间使用采集脚本上报的 `collectedAt`（用户填写信息的时间），而非审批通过时间。这样时间线反映真实的设备使用交接时刻。
 
 ---
 
@@ -490,7 +499,10 @@ npm run dev    # 并发启动前后端
 
 | 日期 | 描述 |
 |------|------|
+| 2026-07-06 | **审批创建默认部门**：审批创建设备时默认设置 `organization: '未分配'`，防止无部门设备在列表中显示异常 |
+| 2026-07-06 | **使用人历史记录时间和地点**：历史起止时间改用采集上报时间而非审批时间，新增 `location` 字段记录使用地点 |
 | 2026-07-06 | **同 MAC 审批更新而非新建**：修复因每次审批都创建设备导致同一资产编号分散在多个部门的问题 |
+| 2026-07-06 | **清理跨部门重复数据**：删除 40 台跨部门重复设备，合并使用人历史和维修记录 |
 | 2026-07-06 | **备份路径不一致修复**：备份控制器解析 `DATABASE_URL` 到错误路径，导致备份/恢复对实际应用数据无效 |
 | 2026-07-06 | **数据上传修复**：全局 `transformRequest` 对 FormData 执行 `JSON.stringify` 导致文件上传为空 |
 | 2026-07-06 | **分页"所有"选项修复**：`pageSizeOptions` 的 `{ value, label }` 对象格式在 Ant Design v5 中不被支持，改为通过 `showSizeChanger.options` 实现 |
