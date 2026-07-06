@@ -105,7 +105,7 @@ const DeviceDetail: React.FC = () => {
   const pendingApproval = device.pendingApprovals?.[0]
 
   // 使用人历史
-  const userHistoryItems = device.historicalUsers?.map((record: any) => ({
+  const userHistoryItems = device.historicalUsers?.map((record: any, idx: number) => ({
     color: 'blue',
     children: (
       <div>
@@ -116,7 +116,8 @@ const DeviceDetail: React.FC = () => {
           </span>
         </p>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: '#999' }}>
-          {new Date(record.startDate).toLocaleDateString()} - {record.endDate ? new Date(record.endDate).toLocaleDateString() : '至今'}
+          {new Date(record.startDate).toLocaleDateString('zh-CN')} ~ {record.endDate ? new Date(record.endDate).toLocaleDateString('zh-CN') : '至今'}
+          {record.location && <span style={{ marginLeft: 12 }}>📍 {record.location}</span>}
         </p>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: '#999' }}>
           操作人：{record.changedBy}

@@ -101,6 +101,10 @@ export async function approveApproval(req: AuthRequest, res: Response) {
     const hardwareData = JSON.parse(approval.hardwareData)
     const assetCode = hardwareData.assetCode?.trim() || `DEV${Date.now()}`
 
+    // 使用采集上报的时间作为历史起止时间，而非审批时间
+    const scanTime = hardwareData.collectedAt ? new Date(hardwareData.collectedAt) : approval.createdAt
+    const newLocation = hardwareData.location?.trim() || approval.location || ''
+
     // 辅助函数：将硬件字段转为字符串
     const toFieldString = (val: any): string => {
       if (!val) return ''
@@ -137,12 +141,12 @@ export async function approveApproval(req: AuthRequest, res: Response) {
             if (existingUser) {
               await tx.device.update({ where: { id: device.id }, data: { currentUserId: existingUser.id } })
               await tx.deviceHistoricalUser.create({
-                data: { deviceId: device.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+                data: { deviceId: device.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: scanTime, location: newLocation },
               })
             } else {
               await tx.device.update({ where: { id: device.id }, data: { currentUserName: hardwareData.userName } })
               await tx.deviceHistoricalUser.create({
-                data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+                data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: scanTime, location: newLocation },
               })
             }
           }
@@ -161,20 +165,20 @@ export async function approveApproval(req: AuthRequest, res: Response) {
         // 使用人变化处理：结束旧使用人记录，创建新使用人记录
         const newUserName = hardwareData.userName?.trim()
         if (newUserName && newUserName !== oldDevice.currentUserName) {
-          // 结束旧使用人的当前历史
+          // 结束旧使用人的当前历史（结束时间 = 新用户的首次上报时间）
           await tx.deviceHistoricalUser.updateMany({
             where: { deviceId: oldDevice.id, endDate: null },
-            data: { endDate: new Date() },
+            data: { endDate: scanTime },
           })
-          // 创建新使用人历史
+          // 创建新使用人历史（开始时间 = 该用户首次上报时间）
           const existingUser = await tx.user.findFirst({ where: { username: newUserName } })
           if (existingUser) {
             await tx.deviceHistoricalUser.create({
-              data: { deviceId: oldDevice.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+              data: { deviceId: oldDevice.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: scanTime, location: newLocation },
             })
           } else {
             await tx.deviceHistoricalUser.create({
-              data: { deviceId: oldDevice.id, userName: newUserName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+              data: { deviceId: oldDevice.id, userName: newUserName, changedBy: userId!, changeReason: '分配', startDate: scanTime, location: newLocation },
             })
           }
         }
@@ -222,7 +226,7 @@ export async function approveApproval(req: AuthRequest, res: Response) {
               data: { currentUserId: existingUser.id },
             })
             await tx.deviceHistoricalUser.create({
-              data: { deviceId: device.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+              data: { deviceId: device.id, userId: existingUser.id, changedBy: userId!, changeReason: '分配', startDate: scanTime, location: newLocation },
             })
           } else {
             await tx.device.update({
@@ -230,7 +234,7 @@ export async function approveApproval(req: AuthRequest, res: Response) {
               data: { currentUserName: hardwareData.userName },
             })
             await tx.deviceHistoricalUser.create({
-              data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: new Date() },
+              data: { deviceId: device.id, userName: hardwareData.userName, changedBy: userId!, changeReason: '分配', startDate: scanTime, location: newLocation },
             })
           }
           // 刷新 device 对象，确保返回的数据包含最新的使用人

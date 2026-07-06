@@ -131,6 +131,7 @@ model DeviceHistoricalUser {
   startDate   DateTime
   endDate     DateTime?
   userName    String?  // 纯文本使用人姓名（非系统用户时使用）
+  location    String?  // 使用地点
   createdAt   DateTime @default(now())
 
   device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
