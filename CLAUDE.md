@@ -1,4 +1,5 @@
 # CLAUDE.md
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 常用开发命令
@@ -104,14 +105,12 @@ computer-asset-management/
    - 输出文件：脚本生成的临时文件保存至 `%TEMP%\hardware_info.json`
 
 ### 关键路径
-1. **数据库路径解析**（2026-07-06 修复）
-   - 路径：`backend/src/controllers/backup.controller.ts`
-   - 修复点：确保 `getDbPath()` 返回值与 `.env` 的 `DATABASE_URL` 一致
+1. **数据库路径解析** (已修复)
+   - `backend/src/controllers/backup.controller.ts` → 确保 `getDbPath()` 返回值与 `.env` 的 `DATABASE_URL` 一致
 
 2. **采集脚本解析**
-   - 主脚本：`scripts/windows-collect.ps1`
-   - 核心逻辑：`# Network & OS` 部分解析 MAC 地址和网络信息
-   - 命令依赖：`Get-NetAdapter` 用于获取 MAC 地址
+   - `scripts/windows-collect.ps1`：核心字段解析逻辑位于 `# Network & OS` 部分
+   - MAC 地址采集依赖 `Get-NetAdapter` 命令
 
 ## 特殊操作流程
 
@@ -124,50 +123,21 @@ npm run db:seed         # 填充种子数据
 ```
 
 ### 测试环境设置
-1. **API 测试**（示例）：
+1. **Jest 配置**（当前未集成，建议添加）：
+   ```bash
+   npm install --save-dev jest ts-jest @types/jest
+   ```
+
+2. **API 测试**（示例）：
    ```bash
    curl -X POST -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}' http://localhost:3000/api/auth/login
    ```
 
-2. **集成测试配置**（当前缺失，建议补充）
-   ```bash
-   # 添加 Jest + React Testing Library
-   cd frontend
-   npm install --save-dev @testing-library/react @testing-library/jest-dom jest @types/jest
-   ```
-
 ## 代码修改注意事项
-
-1. **审批流程逻辑**（2026-07-06 关键修复点）：
-   - 必须在审批创建设备时默认设置 `organization: '未分配'`（防止无部门设备）
+1. **审批流程逻辑**（2026-07-06 修复）：
+   - 审批创建设备时 **必须** 默认设置 `organization: '未分配'`（防止无部门设备）
    - 使用人历史的 `startDate` 必须使用采集时间（`collectedAt`）而非审批时间
 
-2. **前端状态管理规范**：
+2. **前端状态管理**：
    - 页面级状态使用 Zustand Store（如 `userStore.ts`）
-   - 数据请求统一使用 React Query（如 `DeviceList.tsx` 中的 `useQuery`）
-
-3. **安全要点**：
-   - 修改默认 JWT_SECRET（`.env` 文件）
-   - 生产环境限制 CORS 域名（当前开放所有来源）
-   - 对登录接口添加速率限制（`express-rate-limit`）
-
-## 关键问题排查
-
-### 采集脚本无法上传数据
-1. 检查服务器地址：
-   - 脚本中的 `SERVER_URL` 必须与 `.env` 的 `BASE_URL` 一致
-   - 确保目标电脑能访问该地址（局域网/VPN）
-
-2. 验证数据格式：
-   - 脚本输出的 `hardware_info.json` 必须包含 `macAddress` 字段
-   - 检查字段命名与后端预期一致（`networkCards` 为 JSON 数组）
-
-### 审批通过但设备未更新
-1. 检查 MAC 匹配逻辑：
-   - `scan.controller.ts` 中的 `findDeviceByMac()` 必须正确匹配现有设备
-   - 审批记录的 `deviceId` 必须非空
-
-2. 调试数据库事务：
-   - 审批控制器中的事务块必须包含所有关联操作（设备更新 + 历史记录创建 + 审批状态更新）
-
-```
+   - 数据请求使用 React Query（如 `DeviceList.tsx` 中的 `useQuery`）
