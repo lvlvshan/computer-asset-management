@@ -105,7 +105,7 @@ const DeviceDetail: React.FC = () => {
   const pendingApproval = device.pendingApprovals?.[0]
 
   // 使用人历史
-  const userHistoryItems = device.historicalUsers?.map((record: any, idx: number) => ({
+  const userHistoryItems = device.historicalUsers?.map((record: any) => ({
     color: 'blue',
     children: (
       <div>
